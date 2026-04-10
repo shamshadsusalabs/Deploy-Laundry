@@ -73,6 +73,10 @@ jobs:
           # apply provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+
+          # extract UUID
+          UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
+          echo "PP_UUID=$UUID" >> $GITHUB_ENV
         
       - name: Build iOS App
         run: |
@@ -83,4 +87,5 @@ jobs:
             -configuration Release \
             -archivePath $RUNNER_TEMP/apk.xcarchive \
             CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution"
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ env.PP_UUID }}"

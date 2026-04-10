@@ -1,0 +1,56 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build iOS App
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: apk
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: apk/package-lock.json
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: apk
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          bundle install
+          bundle exec pod install
+        
+      - name: Build iOS App
+        run: |
+          cd ios
+          xcodebuild \
+            -workspace apk.xcworkspace \
+            -scheme apk \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            clean build

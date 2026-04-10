@@ -91,6 +91,8 @@ jobs:
       - name: Build iOS App
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"
+          export EXTRA_PACKAGER_ARGS="--max-workers 1"
+          export NODE_ENV=production
           cd ios
           xcodebuild clean archive \
             -workspace apk.xcworkspace \

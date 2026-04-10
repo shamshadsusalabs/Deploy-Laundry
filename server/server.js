@@ -15,7 +15,7 @@ connectDB();
 const app = express();
 
 const allowedOrigins = [
-    'https://jspcorporation-eedc8.web.app',
+    'http://localhost:5173',
     process.env.FRONTEND_URL,
 ].filter(Boolean);
 

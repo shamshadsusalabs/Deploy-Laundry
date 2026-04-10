@@ -83,8 +83,14 @@ jobs:
           UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
           echo "PP_UUID=$UUID" >> $GITHUB_ENV
         
+      - name: Pre-bundle React Native JS
+        run: |
+          export NODE_OPTIONS="--max-old-space-size=4096"
+          npx react-native bundle --platform ios --dev false --entry-file index.js --bundle-output /dev/null --assets-dest ios || exit 1
+
       - name: Build iOS App
         run: |
+          export NODE_OPTIONS="--max-old-space-size=4096"
           cd ios
           xcodebuild clean archive \
             -workspace apk.xcworkspace \

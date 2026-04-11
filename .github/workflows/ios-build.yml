@@ -86,7 +86,13 @@ jobs:
       - name: Pre-bundle React Native JS
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"
-          npx react-native bundle --platform ios --dev false --entry-file index.js --bundle-output /dev/null --assets-dest ios || exit 1
+          npx react-native bundle \
+            --platform ios \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output /dev/null \
+            --assets-dest ios \
+            --reset-cache || exit 1
 
       - name: Build iOS App
         run: |

@@ -111,7 +111,6 @@ jobs:
 
       - name: Prepare ExportOptions.plist
         run: |
-          # Replace placeholder UUID with actual provisioning profile UUID
           sed -i '' "s/\$(PP_UUID)/${{ env.PP_UUID }}/g" ios/ExportOptions.plist
           echo "--- ExportOptions.plist ---"
           cat ios/ExportOptions.plist
@@ -126,7 +125,21 @@ jobs:
           echo "--- Exported files ---"
           ls -la $RUNNER_TEMP/ipa_output/
 
+      - name: Upload to App Store Connect
+        env:
+          APP_STORE_CONNECT_USERNAME: ${{ secrets.APP_STORE_CONNECT_USERNAME }}
+          APP_STORE_CONNECT_PASSWORD: ${{ secrets.APP_STORE_CONNECT_PASSWORD }}
+        run: |
+          IPA_PATH=$(find $RUNNER_TEMP/ipa_output -name "*.ipa" | head -1)
+          echo "Uploading IPA: $IPA_PATH"
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA_PATH" \
+            --username "$APP_STORE_CONNECT_USERNAME" \
+            --password "$APP_STORE_CONNECT_PASSWORD"
+
       - name: Upload IPA as Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: PeninsulaLaundries-iOS

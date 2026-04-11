@@ -108,3 +108,27 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="${{ env.PP_UUID }}"
+
+      - name: Prepare ExportOptions.plist
+        run: |
+          # Replace placeholder UUID with actual provisioning profile UUID
+          sed -i '' "s/\$(PP_UUID)/${{ env.PP_UUID }}/g" ios/ExportOptions.plist
+          echo "--- ExportOptions.plist ---"
+          cat ios/ExportOptions.plist
+
+      - name: Export IPA
+        run: |
+          cd ios
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/apk.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/ipa_output
+          echo "--- Exported files ---"
+          ls -la $RUNNER_TEMP/ipa_output/
+
+      - name: Upload IPA as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PeninsulaLaundries-iOS
+          path: ${{ runner.temp }}/ipa_output/*.ipa
+          retention-days: 30

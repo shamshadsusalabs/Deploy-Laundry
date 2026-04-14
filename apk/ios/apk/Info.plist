@@ -32,9 +32,24 @@
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>jspcorporationptyltd.ts.r.appspot.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<false/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Peninsula Laundries needs your location to find nearby laundry services and provide accurate pickup and delivery.</string>
+	<!-- Privacy Descriptions — Required by App Store -->
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Peninsula Laundries does not track you across other apps or websites. Any data collected is used solely to manage your laundry orders and account.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Peninsula Laundries may access your photo library so you can upload profile or order-related images.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Peninsula Laundries uses your camera so you can take photos for your profile or order documentation.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -58,3 +73,4 @@
 	<false/>
 </dict>
 </plist>
+

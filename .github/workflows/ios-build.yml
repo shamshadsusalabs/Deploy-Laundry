@@ -1,17 +1,14 @@
-name: iOS Build
+name: iOS Build & Submit
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
     branches:
       - main
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build iOS App
+    name: Build & Upload iOS App
     runs-on: macos-15
     defaults:
       run:
@@ -20,6 +17,13 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      # Force Xcode 16 (needed for iOS 18 SDK)
+      - name: Select Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Xcode version check
+        run: xcodebuild -version
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -42,47 +46,50 @@ jobs:
         run: |
           cd ios
           bundle install
-          bundle exec pod install
+          bundle exec pod install --repo-update
 
-      - name: Install the Apple certificate and provisioning profile
+      - name: Install Apple Certificate & Provisioning Profile
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
-          # create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
-          # import certificate and provisioning profile from secrets
           echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
           echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
-          
+
           if [ ! -s "$PP_PATH" ]; then
-            echo "Error: Provisioning profile is empty after decoding! Please check the BUILD_PROVISION_PROFILE_BASE64 secret."
+            echo "❌ Error: Provisioning profile is empty! Check BUILD_PROVISION_PROFILE_BASE64 secret."
             exit 1
           fi
 
-          # create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          # import certificate to keychain
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-          # apply provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles
 
-          # extract UUID
           UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(security cms -D -i $PP_PATH))
           echo "PP_UUID=$UUID" >> $GITHUB_ENV
-        
+          echo "✅ Certificate and provisioning profile installed. UUID: $UUID"
+
+      - name: Bump version to 1.2.1
+        run: |
+          cd ios
+          # Update MARKETING_VERSION
+          agvtool new-marketing-version 1.2.1
+          # Bump build number
+          agvtool next-version -all
+          echo "✅ Version bumped to 1.2.1"
+
       - name: Pre-bundle React Native JS
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"
@@ -94,7 +101,7 @@ jobs:
             --assets-dest ios \
             --reset-cache || exit 1
 
-      - name: Build iOS App
+      - name: Build iOS Archive
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"
           export EXTRA_PACKAGER_ARGS="--max-workers 1"
@@ -107,22 +114,23 @@ jobs:
             -archivePath $RUNNER_TEMP/apk.xcarchive \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="${{ env.PP_UUID }}"
+            PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
+            -allowProvisioningUpdates \
+            | xcpretty --color || xcodebuild -workspace apk.xcworkspace -scheme apk -configuration Release -archivePath $RUNNER_TEMP/apk.xcarchive CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" PROVISIONING_PROFILE_SPECIFIER="$PP_UUID"
 
       - name: Prepare ExportOptions.plist
         run: |
-          sed -i '' "s/\$(PP_UUID)/${{ env.PP_UUID }}/g" ios/ExportOptions.plist
-          echo "--- ExportOptions.plist ---"
+          sed -i '' "s/\$(PP_UUID)/$PP_UUID/g" ios/ExportOptions.plist
+          echo "--- ExportOptions.plist content ---"
           cat ios/ExportOptions.plist
 
       - name: Export IPA
         run: |
-          cd ios
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/apk.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
+            -exportOptionsPlist ios/ExportOptions.plist \
             -exportPath $RUNNER_TEMP/ipa_output
-          echo "--- Exported files ---"
+          echo "--- Exported IPA files ---"
           ls -la $RUNNER_TEMP/ipa_output/
 
       - name: Upload to App Store Connect
@@ -131,17 +139,19 @@ jobs:
           APP_STORE_CONNECT_PASSWORD: ${{ secrets.APP_STORE_CONNECT_PASSWORD }}
         run: |
           IPA_PATH=$(find $RUNNER_TEMP/ipa_output -name "*.ipa" | head -1)
-          echo "Uploading IPA: $IPA_PATH"
+          echo "📦 Uploading IPA: $IPA_PATH"
+          # Use xcrun altool (still works for upload even if deprecated for notarization)
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA_PATH" \
             --username "$APP_STORE_CONNECT_USERNAME" \
-            --password "$APP_STORE_CONNECT_PASSWORD"
+            --password "$APP_STORE_CONNECT_PASSWORD" \
+            --verbose
 
-      - name: Upload IPA as Artifact
+      - name: Upload IPA as GitHub Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PeninsulaLaundries-iOS
+          name: PeninsulaLaundries-iOS-v1.2.1
           path: ${{ runner.temp }}/ipa_output/*.ipa
           retention-days: 30

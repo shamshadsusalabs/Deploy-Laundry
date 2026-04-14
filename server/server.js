@@ -15,14 +15,17 @@ connectDB();
 const app = express();
 
 const allowedOrigins = [
+    'https://jspcorporation-eedc8.web.app',
+
     'http://localhost:5173',
+    'http://localhost:3000',
     process.env.FRONTEND_URL,
 ].filter(Boolean);
 
 // Middleware
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow non-browser requests (like server-to-server or curl without Origin header)
+        // Allow non-browser requests (mobile apps, Postman, curl — no Origin header)
         if (!origin) return callback(null, true);
 
         if (allowedOrigins.includes(origin)) {

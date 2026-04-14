@@ -68,8 +68,11 @@ exports.getPayments = async (req, res, next) => {
         const payments = await Payment.find(filter)
             .populate({
                 path: 'invoice',
-                select: 'invoiceId order totalAmount',
-                populate: { path: 'order', select: 'orderId' },
+                select: 'invoiceId order customer totalAmount',
+                populate: [
+                    { path: 'order', select: 'orderId' },
+                    { path: 'customer', select: 'name phone customerId' },
+                ],
             })
             .populate('processedBy', 'name')
             .sort('-createdAt')

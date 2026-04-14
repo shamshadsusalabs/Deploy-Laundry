@@ -10,13 +10,18 @@ import {
     ScrollView,
     StatusBar,
     Image,
+    ActivityIndicator,
+    Dimensions,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 
+const { width } = Dimensions.get('window');
+const isTablet = width >= 768;
+
 const InputField = ({ icon, label, value, onChangeText, placeholder, ...props }: any) => (
-    <View style={{ marginBottom: 16 }}>
-        <Text style={{ fontSize: 13, fontWeight: '600', color: '#94a3b8', marginBottom: 8, letterSpacing: 0.5 }}>
+    <View style={{ marginBottom: 14 }}>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: '#94a3b8', marginBottom: 6, letterSpacing: 1, textTransform: 'uppercase' }}>
             {label}
         </Text>
         <View
@@ -24,20 +29,22 @@ const InputField = ({ icon, label, value, onChangeText, placeholder, ...props }:
                 flexDirection: 'row',
                 alignItems: 'center',
                 backgroundColor: '#0f172a',
-                borderRadius: 16,
-                paddingHorizontal: 16,
-                paddingVertical: 14,
+                borderRadius: 14,
+                paddingHorizontal: 14,
+                paddingVertical: Platform.OS === 'ios' ? 14 : 12,
                 borderWidth: 1,
                 borderColor: '#334155',
             }}
         >
-            <Text style={{ fontSize: 18, marginRight: 10, color: '#64748b' }}>{icon}</Text>
+            <Text style={{ fontSize: 16, marginRight: 10, color: '#64748b' }}>{icon}</Text>
             <TextInput
-                style={{ flex: 1, color: '#f1f5f9', fontSize: 16 }}
+                style={{ flex: 1, color: '#f1f5f9', fontSize: 15 }}
                 placeholder={placeholder}
                 placeholderTextColor="#475569"
                 value={value}
                 onChangeText={onChangeText}
+                autoCorrect={false}
+                autoCapitalize="none"
                 {...props}
             />
         </View>
@@ -55,27 +62,61 @@ export default function RegisterScreen({ navigation }: any) {
     const { register } = useAuth();
 
     const handleRegister = async () => {
-        if (!name || !phone || !password) {
-            Alert.alert('Error', 'Name, phone, and password are required');
+        // Trim all fields
+        const trimmedName = name.trim();
+        const trimmedPhone = phone.trim();
+        const trimmedEmail = email.trim();
+        const trimmedAddress = address.trim();
+        const trimmedPassword = password.trim();
+        const trimmedConfirm = confirmPassword.trim();
+
+        if (!trimmedName) {
+            Alert.alert('Missing Field', 'Please enter your full name.');
             return;
         }
-        if (password.length < 6) {
-            Alert.alert('Error', 'Password must be at least 6 characters');
+        if (!trimmedPhone) {
+            Alert.alert('Missing Field', 'Please enter your phone number.');
             return;
         }
-        if (password !== confirmPassword) {
-            Alert.alert('Error', 'Passwords do not match');
+        if (trimmedPhone.length < 6) {
+            Alert.alert('Invalid Phone', 'Please enter a valid phone number.');
             return;
         }
+        if (!trimmedPassword) {
+            Alert.alert('Missing Field', 'Please enter a password.');
+            return;
+        }
+        if (trimmedPassword.length < 6) {
+            Alert.alert('Weak Password', 'Password must be at least 6 characters long.');
+            return;
+        }
+        if (trimmedPassword !== trimmedConfirm) {
+            Alert.alert('Password Mismatch', 'Passwords do not match. Please try again.');
+            return;
+        }
+
         setIsLoading(true);
         try {
-            await register({ name, phone, email, address, password });
+            await register({
+                name: trimmedName,
+                phone: trimmedPhone,
+                email: trimmedEmail || undefined,
+                address: trimmedAddress || undefined,
+                password: trimmedPassword,
+            });
+            // Navigation handled by AuthContext / navigator
         } catch (err: any) {
-            Alert.alert('Registration Failed', err.response?.data?.message || 'Something went wrong');
+            const message =
+                err?.response?.data?.message ||
+                err?.message ||
+                'Registration failed. Please check your internet connection and try again.';
+            Alert.alert('Registration Failed', message);
         } finally {
             setIsLoading(false);
         }
     };
+
+    const formWidth = isTablet ? Math.min(width * 0.6, 500) : width;
 
     return (
         <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
@@ -83,18 +124,21 @@ export default function RegisterScreen({ navigation }: any) {
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             >
                 <ScrollView
-                    contentContainerStyle={{ flexGrow: 1 }}
+                    contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingBottom: 40 }}
                     keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
                 >
-                    <View style={{ paddingHorizontal: 24, paddingVertical: 40 }}>
+                    <View style={{ width: formWidth, paddingHorizontal: 24, paddingTop: isTablet ? 60 : 40 }}>
+
                         {/* Header */}
-                        <View style={{ alignItems: 'center', marginBottom: 32 }}>
+                        <View style={{ alignItems: 'center', marginBottom: 28 }}>
                             <View
                                 style={{
-                                    width: 240,
-                                    height: 90,
+                                    width: 220,
+                                    height: 80,
                                     borderRadius: 16,
                                     alignItems: 'center',
                                     justifyContent: 'center',
@@ -102,7 +146,7 @@ export default function RegisterScreen({ navigation }: any) {
                                     backgroundColor: '#ffffff',
                                     shadowColor: '#000',
                                     shadowOffset: { width: 0, height: 4 },
-                                    shadowOpacity: 0.1,
+                                    shadowOpacity: 0.15,
                                     shadowRadius: 10,
                                     elevation: 5,
                                     overflow: 'hidden',
@@ -110,15 +154,15 @@ export default function RegisterScreen({ navigation }: any) {
                             >
                                 <Image
                                     source={require('../../public/logo.png')}
-                                    style={{ width: 220, height: 70 }}
+                                    style={{ width: 200, height: 65 }}
                                     resizeMode="contain"
                                 />
                             </View>
-                            <Text style={{ fontSize: 24, fontWeight: '800', color: '#ffffff' }}>
+                            <Text style={{ fontSize: isTablet ? 28 : 22, fontWeight: '800', color: '#ffffff' }}>
                                 Peninsula Laundries
                             </Text>
                             <Text style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>
-                                Create your account
+                                Create your customer account
                             </Text>
                         </View>
 
@@ -132,22 +176,73 @@ export default function RegisterScreen({ navigation }: any) {
                                 borderColor: '#334155',
                             }}
                         >
-                            <Text style={{ fontSize: 20, fontWeight: '700', color: '#f8fafc', marginBottom: 4 }}>
-                                Register
+                            <Text style={{ fontSize: 18, fontWeight: '700', color: '#f8fafc', marginBottom: 4 }}>
+                                Create Account
                             </Text>
-                            <Text style={{ fontSize: 14, color: '#64748b', marginBottom: 24 }}>
+                            <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>
                                 Fill in your details to get started
                             </Text>
 
-                            <InputField icon="👤" label="FULL NAME *" value={name} onChangeText={setName} placeholder="Enter your name" />
-                            <InputField icon="📱" label="PHONE NUMBER *" value={phone} onChangeText={setPhone} placeholder="Enter phone number" keyboardType="phone-pad" />
-                            <InputField icon="✉️" label="EMAIL (OPTIONAL)" value={email} onChangeText={setEmail} placeholder="Enter email" keyboardType="email-address" autoCapitalize="none" />
-                            <InputField icon="📍" label="ADDRESS (OPTIONAL)" value={address} onChangeText={setAddress} placeholder="Enter address" />
-                            <InputField icon="🔒" label="PASSWORD *" value={password} onChangeText={setPassword} placeholder="Min 6 characters" secureTextEntry />
-                            <InputField icon="🔒" label="CONFIRM PASSWORD *" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Re-enter password" secureTextEntry />
+                            <InputField
+                                icon="👤"
+                                label="Full Name *"
+                                value={name}
+                                onChangeText={setName}
+                                placeholder="Enter your full name"
+                                autoCapitalize="words"
+                                autoCorrect={false}
+                            />
+                            <InputField
+                                icon="📱"
+                                label="Phone Number *"
+                                value={phone}
+                                onChangeText={setPhone}
+                                placeholder="e.g. 0412345678"
+                                keyboardType="phone-pad"
+                                autoCapitalize="none"
+                            />
+                            <InputField
+                                icon="✉️"
+                                label="Email (Optional)"
+                                value={email}
+                                onChangeText={setEmail}
+                                placeholder="Enter your email"
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                            />
+                            <InputField
+                                icon="📍"
+                                label="Address (Optional)"
+                                value={address}
+                                onChangeText={setAddress}
+                                placeholder="Enter your address"
+                                autoCapitalize="sentences"
+                            />
+                            <InputField
+                                icon="🔒"
+                                label="Password *"
+                                value={password}
+                                onChangeText={setPassword}
+                                placeholder="Minimum 6 characters"
+                                secureTextEntry
+                            />
+                            <InputField
+                                icon="🔒"
+                                label="Confirm Password *"
+                                value={confirmPassword}
+                                onChangeText={setConfirmPassword}
+                                placeholder="Re-enter your password"
+                                secureTextEntry
+                            />
 
                             {/* Register Button */}
-                            <TouchableOpacity onPress={handleRegister} disabled={isLoading} activeOpacity={0.8}>
+                            <TouchableOpacity
+                                onPress={handleRegister}
+                                disabled={isLoading}
+                                activeOpacity={0.8}
+                                style={{ marginTop: 6 }}
+                            >
                                 <LinearGradient
                                     colors={isLoading ? ['#475569', '#475569'] : ['#06b6d4', '#0284c7']}
                                     start={{ x: 0, y: 0 }}
@@ -156,10 +251,16 @@ export default function RegisterScreen({ navigation }: any) {
                                         paddingVertical: 16,
                                         borderRadius: 16,
                                         alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexDirection: 'row',
+                                        gap: 8,
                                     }}
                                 >
+                                    {isLoading && (
+                                        <ActivityIndicator color="#ffffff" size="small" />
+                                    )}
                                     <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 16, letterSpacing: 0.5 }}>
-                                        {isLoading ? 'Creating Account...' : 'Create Account'}
+                                        {isLoading ? 'Creating Account…' : 'Create Account'}
                                     </Text>
                                 </LinearGradient>
                             </TouchableOpacity>

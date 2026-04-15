@@ -107,9 +107,12 @@ jobs:
           export EXTRA_PACKAGER_ARGS="--max-workers 1"
           export NODE_ENV=production
           cd ios
+          echo "--- Available destinations for scheme 'apk' ---"
+          xcodebuild -workspace apk.xcworkspace -scheme apk -showdestinations
           xcodebuild clean archive \
             -workspace apk.xcworkspace \
             -scheme apk \
+            -destination "generic/platform=iOS" \
             -sdk iphoneos \
             -configuration Release \
             -archivePath $RUNNER_TEMP/apk.xcarchive \

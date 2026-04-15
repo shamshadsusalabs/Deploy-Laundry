@@ -44,8 +44,6 @@
 		</dict>
 	</dict>
 	<!-- Privacy Descriptions — Required by App Store -->
-	<key>NSUserTrackingUsageDescription</key>
-	<string>Peninsula Laundries does not track you across other apps or websites. Any data collected is used solely to manage your laundry orders and account.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Peninsula Laundries may access your photo library so you can upload profile or order-related images.</string>
 	<key>NSCameraUsageDescription</key>

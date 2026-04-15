@@ -110,8 +110,8 @@ jobs:
           xcodebuild clean archive \
             -workspace apk.xcworkspace \
             -scheme apk \
+            -sdk iphoneos \
             -configuration Release \
-            -destination "generic/platform=iOS" \
             -archivePath $RUNNER_TEMP/apk.xcarchive \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \

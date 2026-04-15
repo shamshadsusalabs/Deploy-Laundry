@@ -28,7 +28,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: apk/package-lock.json
 
@@ -103,6 +103,7 @@ jobs:
 
       - name: Build iOS Archive
         run: |
+          set -o pipefail
           export NODE_OPTIONS="--max-old-space-size=4096"
           export EXTRA_PACKAGER_ARGS="--max-workers 1"
           export NODE_ENV=production
@@ -116,10 +117,20 @@ jobs:
             -sdk iphoneos \
             -configuration Release \
             -archivePath $RUNNER_TEMP/apk.xcarchive \
+            -resultBundlePath $RUNNER_TEMP/apk-build.xcresult \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="$PP_UUID" \
-            -allowProvisioningUpdates
+            -allowProvisioningUpdates \
+            2>&1 | tee $RUNNER_TEMP/xcodebuild-archive.log
+
+      - name: Print Xcode errors if archive fails
+        if: failure()
+        run: |
+          echo "--- Last 250 lines of archive log ---"
+          tail -n 250 $RUNNER_TEMP/xcodebuild-archive.log || true
+          echo "--- Extracted error lines ---"
+          grep -n " error:" $RUNNER_TEMP/xcodebuild-archive.log | tail -n 120 || true
 
       - name: Prepare ExportOptions.plist
         run: |
@@ -158,3 +169,13 @@ jobs:
           name: PeninsulaLaundries-iOS-v1.2.1
           path: ${{ runner.temp }}/ipa_output/*.ipa
           retention-days: 30
+
+      - name: Upload Xcode Archive Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-archive-logs
+          path: |
+            ${{ runner.temp }}/xcodebuild-archive.log
+            ${{ runner.temp }}/apk-build.xcresult
+          retention-days: 14

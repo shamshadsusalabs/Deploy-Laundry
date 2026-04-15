@@ -29,5 +29,13 @@ target 'apk' do
       config[:reactNativePath],
       :mac_catalyst_enabled => false,
     )
+
+    # Xcode 16 can fail third-party pod builds (including React-Core) on
+    # strict non-modular include checks; relax this only for Pods targets.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |build_config|
+        build_config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      end
+    end
   end
 end

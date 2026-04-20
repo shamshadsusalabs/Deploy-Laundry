@@ -94,7 +94,7 @@ npm install
 ```
 *   Create a `.env` file in the `server` directory (reference the codebase for required variables like `MONGO_URI`, `JWT_SECRET`).
 *   Run `npm run seed` to populate initial test data to the database.
-*   Run `npm run dev` to start the backend server on `http://localhost:5000`.
+*   Run `npm run dev` to start the backend server on `https://jspcorporationptyltd.ts.r.appspot.com`.
 
 ### 2. Client (Web Portal) Setup
 ```bash

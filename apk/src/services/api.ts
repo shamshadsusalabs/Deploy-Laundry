@@ -4,8 +4,8 @@ import { Platform } from 'react-native';
 
 // Android emulator uses 10.0.2.2, iOS simulator uses localhost
 const BASE_URL = Platform.OS === 'android'
-    ? 'http://localhost:5000/api'
-    : 'http://localhost:5000/api';
+    ? 'https://jspcorporationptyltd.ts.r.appspot.com/api'
+    : 'https://jspcorporationptyltd.ts.r.appspot.com/api';
 
 const api = axios.create({
     baseURL: BASE_URL,

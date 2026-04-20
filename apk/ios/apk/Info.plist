@@ -43,11 +43,6 @@
 			</dict>
 		</dict>
 	</dict>
-	<!-- Privacy Descriptions — Required by App Store -->
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Peninsula Laundries may access your photo library so you can upload profile or order-related images.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Peninsula Laundries uses your camera so you can take photos for your profile or order documentation.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -71,4 +66,3 @@
 	<false/>
 </dict>
 </plist>
-

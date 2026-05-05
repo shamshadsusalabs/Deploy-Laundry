@@ -59,6 +59,7 @@ app.use('/api/deliveries', require('./routes/deliveries'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/customer-auth', require('./routes/customerAuth'));
 app.use('/api/customer-portal', require('./routes/customerPortal'));
+app.use('/api/refunds', require('./routes/refunds'));
 
 // Health check
 app.get('/api/health', (req, res) => {

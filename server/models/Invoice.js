@@ -53,7 +53,7 @@ const invoiceSchema = new mongoose.Schema(
         },
         paymentStatus: {
             type: String,
-            enum: ['unpaid', 'partial', 'paid'],
+            enum: ['unpaid', 'partial', 'paid', 'refunded'],
             default: 'unpaid',
         },
         isFinalized: {
@@ -63,6 +63,26 @@ const invoiceSchema = new mongoose.Schema(
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
+        },
+        
+        // NEW FIELDS for refund tracking
+        refundLineItems: [{
+            refund: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Refund',
+            },
+            description: String,
+            amount: Number, // negative value
+            refundDate: Date,
+        }],
+        totalRefundAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        creditBalance: {
+            type: Number,
+            default: 0,
         },
     },
     { timestamps: true }

@@ -4,7 +4,6 @@ import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../context/SettingsContext';
 import type { OrderStatus } from '../types';
-import { QRCodeSVG } from 'qrcode.react';
 import {
     HiOutlineArrowLeft,
     HiOutlineCheckCircle,
@@ -149,42 +148,169 @@ const OrderDetail = () => {
         }
     };
 
-    const getOrderUrl = () => `${window.location.origin}/orders/${id}`;
-
-    const printQRLabel = () => {
-        const printWindow = window.open('', '_blank', 'width=400,height=500');
+    const printThermalLabel = () => {
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
         if (!printWindow) return;
 
+        const customer = order.customer || {};
+        const items = order.items || [];
+        
+        // Inline styles object (like invoice approach)
+        const styles = {
+            page: 'max-width: 800px; margin: 0 auto; padding: 20px; background: #fff; color: #000; font-family: Arial, sans-serif;',
+            container: 'border: 3px solid #1c2a5e; padding: 20px; border-radius: 8px;',
+            header: 'display: grid; grid-template-columns: 180px 1fr auto; gap: 15px; align-items: start; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e5e7eb;',
+            logo: 'max-width: 180px; height: auto;',
+            companyInfo: 'text-align: center;',
+            companyName: 'font-size: 14px; font-weight: bold; margin-bottom: 4px; color: #1c2a5e;',
+            companyAddress: 'font-size: 10px; color: #475569; line-height: 1.5;',
+            contactInfo: 'text-align: right; font-size: 9px; line-height: 1.7; color: #475569;',
+            contactIcon: 'font-size: 10px; margin-right: 4px;',
+            customerSection: 'margin-bottom: 20px; padding: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;',
+            customerName: 'font-size: 15px; font-weight: bold; margin-bottom: 4px; color: #1c2a5e;',
+            customerDetails: 'font-size: 11px; color: #64748b;',
+            orderHeader: 'display: flex; justify-content: space-between; align-items: center; padding: 12px 0; margin-bottom: 15px; border-bottom: 2px solid #e5e7eb;',
+            orderButton: 'background: #1c2a5e; color: white; padding: 8px 16px; border-radius: 6px; font-size: 16px; font-weight: bold; display: inline-flex; align-items: center; gap: 8px;',
+            barcodeSection: 'text-align: right;',
+            barcodeText: 'font-size: 12px; margin-top: 4px; font-weight: bold; letter-spacing: 1px; color: #1c2a5e;',
+            datesSection: 'display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; padding: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;',
+            dateItem: 'text-align: center;',
+            dateLabel: 'font-size: 9px; color: #64748b; text-transform: uppercase; margin-bottom: 5px; font-weight: 600; letter-spacing: 1px;',
+            dateValue: 'font-size: 13px; font-weight: bold; color: #1c2a5e;',
+            table: 'width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden;',
+            th: 'background: #1c2a5e; color: white; padding: 10px 12px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;',
+            thCenter: 'background: #1c2a5e; color: white; padding: 10px 12px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;',
+            td: 'padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #1e293b;',
+            tdCenter: 'padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #1e293b; text-align: center; font-weight: 500;',
+            rowEven: 'background: #f8fafc;',
+            footer: 'text-align: center; background: #1c2a5e; color: white; padding: 12px; font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; border-radius: 6px;',
+            createdBy: 'text-align: center; font-size: 9px; color: #94a3b8; margin-top: 12px; font-style: italic;',
+        };
+        
         printWindow.document.write(`
             <html>
             <head>
-                <title>QR Label - ${order?.orderId}</title>
+                <title>Order Label - ${order.orderId}</title>
                 <style>
-                    body { font-family: 'Segoe UI', Arial, sans-serif; text-align: center; padding: 20px; margin: 0; }
-                    .label { border: 2px dashed #cbd5e1; border-radius: 16px; padding: 24px; max-width: 280px; margin: 0 auto; }
-                    .brand { font-size: 18px; font-weight: 700; color: #0891b2; margin-bottom: 4px; }
-                    .subtitle { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px; }
-                    .qr-container { margin: 16px auto; }
-                    .order-id { font-size: 22px; font-weight: 800; color: #0f172a; margin: 12px 0 4px; letter-spacing: 1px; }
-                    .customer { font-size: 13px; color: #64748b; margin-bottom: 4px; }
-                    .date { font-size: 11px; color: #94a3b8; }
-                    .footer { font-size: 9px; color: #cbd5e1; margin-top: 16px; }
-                    @media print { body { padding: 0; } .label { border: 2px dashed #000; } }
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    @page { size: A4 portrait; margin: 10mm; }
+                    @media print {
+                        html, body { background: #ffffff !important; margin: 0 !important; padding: 0 !important; }
+                        body * { visibility: hidden; }
+                        .label-print-shell, .label-print-shell * { visibility: visible; }
+                        .label-print-shell { position: absolute; left: 0; top: 0; width: 100%; }
+                    }
                 </style>
+                <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
             </head>
             <body>
-                <div class="label">
-                    <div class="brand">Peninsula Laundries</div>
-                    <div class="subtitle">Laundry POS</div>
-                    <div class="qr-container">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(getOrderUrl())}" width="180" height="180" />
+                <div class="label-print-shell" style="${styles.page}">
+                    <div style="${styles.container}">
+                        <!-- Header -->
+                        <div style="${styles.header}">
+                            <div>
+                                <img src="${window.location.origin}/logo.jpeg" alt="Logo" style="${styles.logo}" />
+                            </div>
+                            <div style="${styles.companyInfo}">
+                                <div style="${styles.companyName}">JSP Corporation Pty Ltd T/A Peninsula Laundries</div>
+                                <div style="${styles.companyAddress}">
+                                    13 Redcliffe Gardens Drive<br/>
+                                    Clontarf, Queensland, 4019
+                                </div>
+                            </div>
+                            <div style="${styles.contactInfo}">
+                                <div><span style="${styles.contactIcon}">📞</span> 61475902921</div>
+                                <div><span style="${styles.contactIcon}">🌐</span> peninsulalaundries.com.au</div>
+                                <div><span style="${styles.contactIcon}">📧</span> orders@peninsulalaundries.com.au</div>
+                                <div style="margin-top: 4px; font-weight: bold;">ABN: 31647801045</div>
+                            </div>
+                        </div>
+
+                        <!-- Customer Section -->
+                        <div style="${styles.customerSection}">
+                            <div style="${styles.customerName}">${customer.name || 'N/A'}</div>
+                            <div style="${styles.customerDetails}">
+                                ${customer.phone || ''} ${customer.email ? '• ' + customer.email : ''}
+                            </div>
+                        </div>
+
+                        <!-- Order Header with Barcode -->
+                        <div style="${styles.orderHeader}">
+                            <div style="${styles.orderButton}">
+                                <span style="font-size: 20px;">+</span> Order
+                            </div>
+                            <div style="${styles.barcodeSection}">
+                                <svg id="barcode"></svg>
+                                <div style="${styles.barcodeText}">${order.orderId}</div>
+                            </div>
+                        </div>
+
+                        <!-- Dates -->
+                        <div style="${styles.datesSection}">
+                            <div style="${styles.dateItem}">
+                                <div style="${styles.dateLabel}">Order Date</div>
+                                <div style="${styles.dateValue}">${new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase()}</div>
+                            </div>
+                            <div style="${styles.dateItem}">
+                                <div style="${styles.dateLabel}">Delivery Date</div>
+                                <div style="${styles.dateValue}">${order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase() : 'N/A'}</div>
+                            </div>
+                        </div>
+
+                        <!-- Items Table -->
+                        <table style="${styles.table}">
+                            <thead>
+                                <tr>
+                                    <th style="${styles.th}">Item #</th>
+                                    <th style="${styles.th}">Item Name</th>
+                                    <th style="${styles.thCenter}">Order Qty</th>
+                                    <th style="${styles.thCenter}">Filled Qty</th>
+                                    <th style="${styles.thCenter}">Back Order</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${items.map((item: any, index: number) => `
+                                    <tr style="${index % 2 === 1 ? styles.rowEven : ''}">
+                                        <td style="${styles.td}">${index + 1}</td>
+                                        <td style="${styles.td}">${item.itemName || item.serviceName}</td>
+                                        <td style="${styles.tdCenter}">${item.quantity}</td>
+                                        <td style="${styles.tdCenter}">${item.quantity}</td>
+                                        <td style="${styles.tdCenter}">0</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+
+                        <!-- Created By -->
+                        <div style="${styles.createdBy}">
+                            Created by ${order.createdBy?.name || 'Admin'} on ${new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })} at ${new Date(order.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </div>
+
+                        <!-- Footer -->
+                        <div style="${styles.footer}">
+                            THANK YOU FOR DOING BUSINESS WITH US!
+                        </div>
                     </div>
-                    <div class="order-id">${order?.orderId}</div>
-                    <div class="customer">${order?.customer?.name || ''}</div>
-                    <div class="date">${new Date(order?.createdAt).toLocaleDateString()}</div>
-                    <div class="footer">Scan to view order details</div>
                 </div>
-                <script>setTimeout(() => { window.print(); window.close(); }, 500);</script>
+                <script>
+                    window.onload = function() {
+                        // Generate barcode
+                        JsBarcode("#barcode", "${order.orderId}", {
+                            format: "CODE128",
+                            width: 2,
+                            height: 50,
+                            displayValue: false,
+                            background: "#ffffff",
+                            lineColor: "#000000"
+                        });
+                        
+                        // Print after barcode is generated
+                        setTimeout(function() {
+                            window.print();
+                        }, 800);
+                    };
+                </script>
             </body>
             </html>
         `);
@@ -214,8 +340,13 @@ const OrderDetail = () => {
                     <h1 className="text-2xl font-bold text-slate-900">{order.orderId}</h1>
                     <p className="text-sm text-slate-500">Created {new Date(order.createdAt).toLocaleString()}</p>
                 </div>
-                <button onClick={printQRLabel} className="p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:text-cyan-600 hover:border-cyan-200 hover:bg-cyan-50 transition-all" title="Print QR Label">
-                    <HiOutlinePrinter className="w-5 h-5" />
+                <button 
+                    onClick={printThermalLabel} 
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:text-cyan-600 hover:border-cyan-200 hover:bg-cyan-50 transition-all" 
+                    title="Print Order Label"
+                >
+                    <HiOutlinePrinter className="w-4 h-4" />
+                    <span className="text-sm font-medium">Print Label</span>
                 </button>
                 <span className={`px-4 py-2 rounded-xl text-sm font-semibold capitalize ${statusColors[order.status] || 'bg-slate-600 text-slate-900'}`}>
                     {order.status}
@@ -259,6 +390,132 @@ const OrderDetail = () => {
                 </div>
             )}
 
+            {/* Service Time Tracking */}
+            {order.serviceStartTime && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <h2 className="text-base font-semibold text-slate-900 mb-4">Service Time</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <span className="text-xs text-slate-500">Started</span>
+                            <p className="text-sm text-slate-900 font-medium mt-1">
+                                {new Date(order.serviceStartTime).toLocaleString()}
+                            </p>
+                        </div>
+                        {order.serviceEndTime && (
+                            <>
+                                <div>
+                                    <span className="text-xs text-slate-500">Completed</span>
+                                    <p className="text-sm text-slate-900 font-medium mt-1">
+                                        {new Date(order.serviceEndTime).toLocaleString()}
+                                    </p>
+                                </div>
+                                <div>
+                                    <span className="text-xs text-slate-500">Duration</span>
+                                    <p className="text-sm text-slate-900 font-medium mt-1">
+                                        {order.serviceDuration < 1 
+                                            ? `${Math.round(order.serviceDuration * 60)} minutes`
+                                            : `${order.serviceDuration.toFixed(2)} hours`
+                                        }
+                                    </p>
+                                </div>
+                            </>
+                        )}
+                        {!order.serviceEndTime && (
+                            <div>
+                                <span className="text-xs text-slate-500">Status</span>
+                                <p className="text-sm text-cyan-600 font-medium mt-1">In Progress</p>
+                            </div>
+                        )}
+                    </div>
+                    {order.isDelayed && (
+                        <div className="mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2">
+                            <span className="text-red-600 text-sm font-medium">⚠️ Delayed Order</span>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Refund Information */}
+            {order.hasRefund && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-base font-semibold text-slate-900">Refund Information</h2>
+                        <span className="px-3 py-1 bg-amber-200 text-amber-800 text-xs font-semibold rounded-lg">
+                            REFUNDED
+                        </span>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                            <span className="text-slate-600">Total Refunded:</span>
+                            <span className="text-slate-900 font-semibold">{currency}{order.totalRefundAmount?.toLocaleString()}</span>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => navigate(`/orders/${id}/refund`)}
+                        className="mt-3 w-full px-4 py-2 text-sm rounded-xl border border-amber-300 text-amber-700 hover:bg-amber-100 transition-colors"
+                    >
+                        View Refund Details
+                    </button>
+                </div>
+            )}
+
+            {/* Damage Information */}
+            {order.items?.some((item: any) => item.damageDetails) && (
+                <div className="rounded-2xl border border-orange-200 bg-orange-50 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-base font-semibold text-slate-900">Damage Information</h2>
+                        <span className="px-3 py-1 bg-orange-200 text-orange-800 text-xs font-semibold rounded-lg">
+                            DAMAGE RECORDED
+                        </span>
+                    </div>
+                    <div className="space-y-3">
+                        {order.items?.filter((item: any) => item.damageDetails).map((item: any, i: number) => (
+                            <div key={i} className="p-3 bg-white rounded-lg border border-orange-200">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div>
+                                        <p className="font-medium text-slate-900">{item.itemName || item.serviceName}</p>
+                                        <p className="text-sm text-slate-600">
+                                            Damaged: {item.damagedQuantity} of {item.quantity} {item.unit}
+                                        </p>
+                                    </div>
+                                    <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded">
+                                        {item.damageReason?.replace('_', ' ')}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-slate-700 bg-slate-50 p-2 rounded">
+                                    <strong>Details:</strong> {item.damageDetails}
+                                </p>
+                                {item.potentialRefundAmount && (
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Potential refund: {currency}{item.potentialRefundAmount.toLocaleString()}
+                                    </p>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    {!order.hasRefund && (
+                        <button
+                            onClick={() => navigate(`/orders/${id}/refund`)}
+                            className="mt-3 w-full px-4 py-2 text-sm rounded-xl border border-orange-300 text-orange-700 hover:bg-orange-100 transition-colors"
+                        >
+                            Process Refund for Damaged Items
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* Process Refund Button (for admin/manager) */}
+            {!order.hasRefund && order.status !== 'cancelled' && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <button
+                        onClick={() => navigate(`/orders/${id}/refund`)}
+                        className="w-full px-4 py-2.5 text-sm font-semibold rounded-xl border-2 border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                        Process Refund
+                    </button>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Customer & Order Info */}
                 <div className="lg:col-span-2 space-y-6">
@@ -270,7 +527,7 @@ const OrderDetail = () => {
                         <table className="w-full">
                             <thead>
                                 <tr className="text-xs text-slate-500 uppercase border-b border-slate-200">
-                                    <th className="px-5 py-3 text-left">Service</th>
+                                    <th className="px-5 py-3 text-left">Service / Item</th>
                                     <th className="px-5 py-3 text-center">Qty</th>
                                     <th className="px-5 py-3 text-right">Rate</th>
                                     <th className="px-5 py-3 text-right">Subtotal</th>
@@ -280,8 +537,40 @@ const OrderDetail = () => {
                                 {order.items?.map((item: any, i: number) => (
                                     <tr key={i} className="border-b border-slate-200">
                                         <td className="px-5 py-3">
-                                            <span className="text-sm text-slate-900">{item.serviceName}</span>
-                                            <p className="text-xs text-slate-500 capitalize">{item.serviceType?.replace('-', ' ')}</p>
+                                            <div className="flex items-start gap-2">
+                                                <div className="flex-1">
+                                                    <span className="text-sm text-slate-900 font-medium">
+                                                        {item.itemName || item.serviceName}
+                                                    </span>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <p className="text-xs text-slate-500 capitalize">{item.serviceType?.replace('-', ' ')}</p>
+                                                        {item.itemType && (
+                                                            <>
+                                                                <span className="text-slate-300">•</span>
+                                                                <span className="text-xs px-2 py-0.5 bg-cyan-50 text-cyan-600 rounded">
+                                                                    {item.itemType.replace('_', ' ')}
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                        {item.isRefunded && (
+                                                            <>
+                                                                <span className="text-slate-300">•</span>
+                                                                <span className="text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded font-medium">
+                                                                    Refunded {currency}{item.refundAmount}
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                        {item.damageDetails && (
+                                                            <>
+                                                                <span className="text-slate-300">•</span>
+                                                                <span className="text-xs px-2 py-0.5 bg-orange-50 text-orange-600 rounded font-medium">
+                                                                    Damaged ({item.damagedQuantity} {item.unit})
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </td>
                                         <td className="px-5 py-3 text-center text-sm text-slate-600">{item.quantity} {item.unit}</td>
                                         <td className="px-5 py-3 text-right text-sm text-slate-600">{currency}{item.pricePerUnit}</td>
@@ -387,34 +676,6 @@ const OrderDetail = () => {
                             <p className="text-sm text-slate-500">{order.specialInstructions}</p>
                         </div>
                     )}
-
-                    {/* QR Code */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                        <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm13-2h-2v2h2v-2zm0 4h-2v4h4v-2h-2v-2zm-4-4h2v4h-2v-4zm0 6h2v2h-2v-2zm4 2h2v2h-2v-2z" /></svg>
-                            QR Code
-                        </h3>
-                        <div className="flex flex-col items-center">
-                            <div className="p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
-                                <QRCodeSVG
-                                    value={getOrderUrl()}
-                                    size={140}
-                                    bgColor="#ffffff"
-                                    fgColor="#0f172a"
-                                    level="M"
-                                    includeMargin={false}
-                                />
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2">Scan to view order</p>
-                            <p className="text-sm font-bold text-slate-900 mt-1">{order.orderId}</p>
-                            <button
-                                onClick={printQRLabel}
-                                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-xl border border-cyan-200 text-cyan-600 hover:bg-cyan-50 transition-colors"
-                            >
-                                <HiOutlinePrinter className="w-4 h-4" /> Print QR Label
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
 

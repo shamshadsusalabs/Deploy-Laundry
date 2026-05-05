@@ -25,6 +25,7 @@ export interface ICustomer {
     address?: string;
     customerType: 'walk-in' | 'corporate';
     outstandingBalance: number;
+    creditBalance?: number; // NEW FIELD
     createdAt: string;
     updatedAt: string;
 }
@@ -53,6 +54,20 @@ export interface IOrderItem {
     unit: 'piece' | 'kg' | 'bundle';
     pricePerUnit: number;
     subtotal: number;
+    // NEW FIELDS for item details and refund tracking
+    itemType?: 'Clothing' | 'Linen' | 'Accessories' | 'Special_Items';
+    isRefunded?: boolean;
+    refundAmount?: number;
+    refundReason?: 'Damaged' | 'Lost' | 'Delayed_Service' | 'Quality_Issue' | 'Customer_Complaint' | 'Other';
+    refundReasonDescription?: string;
+    // NEW FIELDS for damage tracking
+    damageDetails?: string;
+    damagedQuantity?: number;
+    damageReason?: 'Damaged' | 'Lost' | 'Delayed_Service' | 'Quality_Issue' | 'Customer_Complaint' | 'Other';
+    damageReasonDescription?: string;
+    damageRecordedBy?: string;
+    damageRecordedAt?: string;
+    potentialRefundAmount?: number;
 }
 
 // --- ORDER STATUS ---
@@ -91,9 +106,25 @@ export interface IOrder {
     createdBy?: IUser;
     createdAt: string;
     updatedAt: string;
+    // NEW FIELDS for service time tracking
+    serviceStartTime?: string;
+    serviceEndTime?: string;
+    serviceDuration?: number;
+    isDelayed?: boolean;
+    // NEW FIELDS for refund tracking
+    totalRefundAmount?: number;
+    hasRefund?: boolean;
+    groupedItems?: Record<string, IOrderItem[]>;
 }
 
 // --- INVOICE ---
+export interface IRefundLineItem {
+    refund: string;
+    description: string;
+    amount: number;
+    refundDate: string;
+}
+
 export interface IInvoice {
     _id: string;
     invoiceId: string;
@@ -106,9 +137,14 @@ export interface IInvoice {
     totalAmount: number;
     paidAmount: number;
     balanceDue: number;
-    paymentStatus: 'unpaid' | 'partial' | 'paid';
+    paymentStatus: 'unpaid' | 'partial' | 'paid' | 'refunded';
     isFinalized: boolean;
     createdAt: string;
+    // NEW FIELDS for refund tracking
+    refundLineItems?: IRefundLineItem[];
+    totalRefundAmount?: number;
+    creditBalance?: number;
+    payments?: IPayment[];
 }
 
 // --- PAYMENT ---
@@ -140,4 +176,46 @@ export interface IDashboardStats {
     completedOrders: number;
     totalCustomers: number;
     totalRevenue: number;
+}
+
+// --- REFUND ---
+export interface IRefundItem {
+    orderItemId: string;
+    itemName: string;
+    itemType?: string;
+    refundAmount: number;
+    refundReason: 'Damaged' | 'Lost' | 'Delayed_Service' | 'Quality_Issue' | 'Customer_Complaint' | 'Other';
+    refundReasonDescription?: string;
+}
+
+export interface IRefund {
+    _id: string;
+    refundId: string;
+    order: string | IOrder;
+    invoice: string;
+    customer: string | ICustomer;
+    refundType: 'full' | 'partial';
+    totalRefundAmount: number;
+    refundedItems?: IRefundItem[];
+    fullOrderReason?: 'Damaged' | 'Lost' | 'Delayed_Service' | 'Quality_Issue' | 'Customer_Complaint' | 'Other';
+    fullOrderReasonDescription?: string;
+    processedBy: string | IUser;
+    processedByName?: string;
+    ipAddress?: string;
+    status: 'pending' | 'completed' | 'failed';
+    notes?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface IRefundRecommendation {
+    orderId: string;
+    orderNumber: string;
+    customerName: string;
+    serviceDuration: number;
+    expectedDuration: number;
+    delayPercentage: number;
+    recommendedAmount: number;
+    refundPercentage: number;
+    reason: string;
 }

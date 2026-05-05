@@ -10,6 +10,7 @@ import {
     StatusBar,
     Modal,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import LinearGradient from 'react-native-linear-gradient';
 import api from '../services/api';
 
@@ -36,10 +37,19 @@ interface CartItem {
     quantity: number;
 }
 
+interface ManualItem {
+    itemType: 'Clothing' | 'Linen' | 'Accessories' | 'Special_Items';
+    itemName: string;
+    quantity: number;
+    pricePerUnit: number;
+    subtotal: number;
+}
+
 export default function CreateOrderScreen({ navigation }: any) {
     const [services, setServices] = useState<ServiceItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState<CartItem[]>([]);
+    const [manualItems, setManualItems] = useState<ManualItem[]>([]);
     const [specialInstructions, setSpecialInstructions] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [showCart, setShowCart] = useState(false);
@@ -102,34 +112,115 @@ export default function CreateOrderScreen({ navigation }: any) {
         setCart(cart.filter(c => c.serviceId !== serviceId));
     };
 
+    // Manual Items Functions
+    const addManualItem = () => {
+        setManualItems([...manualItems, {
+            itemType: 'Clothing',
+            itemName: '',
+            quantity: 1,
+            pricePerUnit: 0,
+            subtotal: 0,
+        }]);
+    };
+
+    const updateManualItem = (index: number, field: keyof ManualItem, value: any) => {
+        setManualItems(manualItems.map((item, i) => {
+            if (i !== index) return item;
+            const updated = { ...item, [field]: value };
+            // Recalculate subtotal when quantity or price changes
+            if (field === 'quantity' || field === 'pricePerUnit') {
+                updated.subtotal = updated.quantity * updated.pricePerUnit;
+            }
+            return updated;
+        }));
+    };
+
+    const removeManualItem = (index: number) => {
+        setManualItems(manualItems.filter((_, i) => i !== index));
+    };
+
     const getCartTotal = () => cart.reduce((sum, c) => sum + (c.service.pricePerUnit * c.quantity), 0);
-    const getCartCount = () => cart.reduce((sum, c) => sum + c.quantity, 0);
+    const getCartCount = () => {
+        const serviceCount = cart.reduce((sum, c) => sum + c.quantity, 0);
+        const manualCount = manualItems.reduce((sum, m) => sum + m.quantity, 0);
+        return serviceCount + manualCount;
+    };
 
     const placeOrder = async () => {
-        if (cart.length === 0) {
-            Alert.alert('Empty Cart', 'Please add at least one service to your order');
+        // Validation: Check if cart is empty
+        if (cart.length === 0 && manualItems.length === 0) {
+            Alert.alert('Empty Cart', 'Please add at least one service or item');
             return;
+        }
+
+        // Validation: Check manual items for empty itemName
+        for (const item of manualItems) {
+            if (!item.itemName.trim()) {
+                Alert.alert('Validation Error', 'Please provide item name for all manual items');
+                return;
+            }
+        }
+
+        // Validation: Check manual items for quantity < 1
+        for (const item of manualItems) {
+            if (item.quantity < 1) {
+                Alert.alert('Validation Error', 'Quantity must be at least 1 for all items');
+                return;
+            }
         }
 
         setSubmitting(true);
         try {
-            const items = cart.map(c => ({
+            // Transform service items
+            const serviceItems = cart.map(c => ({
                 serviceId: c.serviceId,
                 quantity: c.quantity,
             }));
 
+            // Transform manual items - match web client format exactly
+            const transformedManualItems = manualItems.map(mi => ({
+                service: null,
+                serviceName: mi.itemName,
+                serviceType: 'manual',
+                itemType: mi.itemType,
+                itemName: mi.itemName,
+                quantity: mi.quantity,
+                unit: 'piece',
+                pricePerUnit: mi.pricePerUnit,
+                subtotal: mi.subtotal,
+            }));
+
+            // Combine items
+            const allItems = [...serviceItems, ...transformedManualItems];
+
+            console.log('Submitting order with items:', JSON.stringify(allItems, null, 2));
+
             const res = await api.post('/customer-portal/orders', {
-                items,
+                items: allItems,
                 specialInstructions: specialInstructions.trim() || undefined,
             });
 
             setLastOrderId(res.data.data.orderId || 'PENDING');
             setCart([]);
+            setManualItems([]); // Clear manual items
             setSpecialInstructions('');
             setShowCart(false);
             setShowSuccess(true);
         } catch (err: any) {
-            Alert.alert('Error', err.response?.data?.message || 'Failed to place order');
+            console.error('Order submission error:', err);
+            console.error('Error response:', err.response?.data);
+            console.error('Error status:', err.response?.status);
+            console.log('Service items count:', cart.length);
+            console.log('Manual items count:', manualItems.length);
+            console.log('Manual items data:', JSON.stringify(manualItems, null, 2));
+            
+            if (!err.response) {
+                Alert.alert('Network Error', 'Failed to place order. Please check your connection.');
+            } else if (err.response?.status === 404) {
+                Alert.alert('Error', 'Order endpoint not found. Please contact support.');
+            } else {
+                Alert.alert('Error', err.response?.data?.message || 'Failed to place order');
+            }
         } finally {
             setSubmitting(false);
         }
@@ -287,10 +378,193 @@ export default function CreateOrderScreen({ navigation }: any) {
                         </View>
                     );
                 })}
+
+                {/* Manual Items Section */}
+                <View style={{ marginBottom: 20 }}>
+                    {/* Section Header */}
+                    <View style={{ paddingHorizontal: 20, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ color: '#f1f5f9', fontSize: 16, fontWeight: '700' }}>
+                            Add Items (Bedsheet, Towel, etc.)
+                        </Text>
+                        <TouchableOpacity onPress={addManualItem} activeOpacity={0.8}>
+                            <LinearGradient
+                                colors={['#06b6d4', '#0284c7']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 8,
+                                    borderRadius: 10,
+                                    gap: 6,
+                                }}
+                            >
+                                <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: '700' }}>+</Text>
+                                <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '700' }}>Add Item</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Empty State or Item Cards */}
+                    {manualItems.length === 0 ? (
+                        <Text style={{ color: '#64748b', fontSize: 13, textAlign: 'center', paddingVertical: 20, paddingHorizontal: 20 }}>
+                            No items added. Click "Add Item" to add bedsheet, towel, etc.
+                        </Text>
+                    ) : (
+                        manualItems.map((item, index) => (
+                            <View
+                                key={index}
+                                style={{
+                                    backgroundColor: '#1e293b',
+                                    borderRadius: 16,
+                                    padding: 16,
+                                    marginHorizontal: 20,
+                                    marginBottom: 8,
+                                    borderWidth: 1,
+                                    borderColor: '#334155',
+                                }}
+                            >
+                                {/* Row 1: Item Type & Item Name */}
+                                <View style={{ flexDirection: 'column', gap: 10, marginBottom: 10 }}>
+                                    <View>
+                                        <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '600', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                            Item Type
+                                        </Text>
+                                        <View style={{ backgroundColor: '#0f172a', borderRadius: 10, borderWidth: 1, borderColor: '#334155', height: 44 }}>
+                                            <Picker
+                                                selectedValue={item.itemType}
+                                                onValueChange={(value) => updateManualItem(index, 'itemType', value)}
+                                                style={{ color: '#f1f5f9', height: 44 }}
+                                                dropdownIconColor="#f1f5f9"
+                                                itemStyle={{ height: 44 }}
+                                            >
+                                                <Picker.Item label="👕 Clothing" value="Clothing" />
+                                                <Picker.Item label="🛏️ Linen" value="Linen" />
+                                                <Picker.Item label="👜 Accessories" value="Accessories" />
+                                                <Picker.Item label="⭐ Special Items" value="Special_Items" />
+                                            </Picker>
+                                        </View>
+                                    </View>
+                                    <View>
+                                        <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '600', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                            Item Name
+                                        </Text>
+                                        <TextInput
+                                            value={item.itemName}
+                                            onChangeText={(text) => updateManualItem(index, 'itemName', text)}
+                                            placeholder="e.g., Bedsheet, Towel"
+                                            placeholderTextColor="#475569"
+                                            style={{
+                                                backgroundColor: '#0f172a',
+                                                borderRadius: 10,
+                                                borderWidth: 1,
+                                                borderColor: '#334155',
+                                                color: '#f1f5f9',
+                                                fontSize: 13,
+                                                paddingHorizontal: 12,
+                                                paddingVertical: 10,
+                                                height: 44,
+                                            }}
+                                        />
+                                    </View>
+                                </View>
+
+                                {/* Row 2: Quantity, Price, Subtotal */}
+                                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '600', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                            Quantity
+                                        </Text>
+                                        <TextInput
+                                            value={String(item.quantity)}
+                                            onChangeText={(text) => {
+                                                const qty = parseInt(text) || 1;
+                                                updateManualItem(index, 'quantity', Math.max(1, qty));
+                                            }}
+                                            keyboardType="numeric"
+                                            style={{
+                                                backgroundColor: '#0f172a',
+                                                borderRadius: 10,
+                                                borderWidth: 1,
+                                                borderColor: '#334155',
+                                                color: '#f1f5f9',
+                                                fontSize: 13,
+                                                paddingHorizontal: 12,
+                                                paddingVertical: 10,
+                                                textAlign: 'center',
+                                                height: 44,
+                                            }}
+                                        />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '600', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                            Price/Item
+                                        </Text>
+                                        <TextInput
+                                            value={String(item.pricePerUnit)}
+                                            onChangeText={(text) => {
+                                                const price = parseFloat(text) || 0;
+                                                updateManualItem(index, 'pricePerUnit', Math.max(0, price));
+                                            }}
+                                            keyboardType="decimal-pad"
+                                            style={{
+                                                backgroundColor: '#0f172a',
+                                                borderRadius: 10,
+                                                borderWidth: 1,
+                                                borderColor: '#334155',
+                                                color: '#f1f5f9',
+                                                fontSize: 13,
+                                                paddingHorizontal: 12,
+                                                paddingVertical: 10,
+                                                textAlign: 'center',
+                                                height: 44,
+                                            }}
+                                        />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '600', marginBottom: 6, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                                            Subtotal
+                                        </Text>
+                                        <View style={{
+                                            backgroundColor: '#0f172a',
+                                            borderRadius: 10,
+                                            borderWidth: 1,
+                                            borderColor: '#334155',
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 10,
+                                            height: 44,
+                                            justifyContent: 'center',
+                                        }}>
+                                            <Text style={{ color: '#f1f5f9', fontSize: 13, fontWeight: '700', textAlign: 'center' }}>
+                                                ${item.subtotal}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity
+                                        onPress={() => removeManualItem(index)}
+                                        style={{
+                                            width: 44,
+                                            height: 44,
+                                            borderRadius: 10,
+                                            backgroundColor: '#1e293b',
+                                            borderWidth: 1,
+                                            borderColor: '#ef4444',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                        }}
+                                    >
+                                        <Text style={{ fontSize: 18 }}>🗑️</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ))
+                    )}
+                </View>
             </ScrollView>
 
             {/* Floating Cart Button */}
-            {cart.length > 0 && (
+            {(cart.length > 0 || manualItems.length > 0) && (
                 <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingBottom: 24, paddingTop: 12 }}>
                     <TouchableOpacity onPress={() => setShowCart(true)} activeOpacity={0.9}>
                         <LinearGradient
@@ -398,6 +672,48 @@ export default function CreateOrderScreen({ navigation }: any) {
                                     </View>
                                 </View>
                             ))}
+
+                            {/* Manual Items Section */}
+                            {manualItems.length > 0 && (
+                                <View style={{ marginTop: 16, marginBottom: 8 }}>
+                                    <Text style={{ color: '#f1f5f9', fontSize: 14, fontWeight: '700', marginBottom: 4 }}>
+                                        Items
+                                    </Text>
+                                    <Text style={{ color: '#22c55e', fontSize: 11, fontWeight: '600', marginBottom: 8, fontStyle: 'italic' }}>
+                                        For tracking only - not billed
+                                    </Text>
+                                    {manualItems.map((item, index) => (
+                                        <View
+                                            key={index}
+                                            style={{
+                                                backgroundColor: '#1e293b',
+                                                borderRadius: 14,
+                                                padding: 12,
+                                                marginBottom: 6,
+                                                borderWidth: 1,
+                                                borderColor: '#22c55e',
+                                            }}
+                                        >
+                                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                                <View style={{ backgroundColor: 'rgba(34, 197, 94, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                                                    <Text style={{ color: '#22c55e', fontSize: 10, fontWeight: '700' }}>
+                                                        {item.itemType.replace('_', ' ')}
+                                                    </Text>
+                                                </View>
+                                                <TouchableOpacity onPress={() => removeManualItem(index)} style={{ paddingHorizontal: 8, paddingVertical: 4 }}>
+                                                    <Text style={{ color: '#ef4444', fontSize: 11, fontWeight: '600' }}>Remove</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                            <Text style={{ color: '#f1f5f9', fontSize: 13, fontWeight: '600', marginBottom: 4 }}>
+                                                {item.itemName || 'Unnamed Item'}
+                                            </Text>
+                                            <Text style={{ color: '#64748b', fontSize: 11 }}>
+                                                {item.quantity} × ${item.pricePerUnit} = ${item.subtotal}
+                                            </Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
 
                             {/* Special Instructions */}
                             <View style={{ marginTop: 12 }}>

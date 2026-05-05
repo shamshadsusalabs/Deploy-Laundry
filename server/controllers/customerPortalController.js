@@ -196,28 +196,53 @@ exports.createMyOrder = async (req, res, next) => {
         // Validate and build order items
         const orderItems = [];
         for (const item of items) {
-            const service = await Service.findById(item.serviceId);
-            if (!service) {
-                return res.status(404).json({ success: false, message: `Service not found: ${item.serviceId}` });
+            // Handle manual items (no serviceId)
+            if (!item.serviceId && item.serviceType === 'manual') {
+                // Manual item - use provided data directly
+                orderItems.push({
+                    service: null,
+                    serviceName: item.serviceName || item.itemName,
+                    serviceType: 'manual',
+                    itemType: item.itemType || 'Clothing',
+                    itemName: item.itemName,
+                    quantity: Number(item.quantity) || 1,
+                    unit: item.unit || 'piece',
+                    pricePerUnit: Number(item.pricePerUnit) || 0,
+                    subtotal: Number(item.subtotal) || 0,
+                });
+            } else if (item.serviceId) {
+                // Regular service item
+                const service = await Service.findById(item.serviceId);
+                if (!service) {
+                    return res.status(404).json({ success: false, message: `Service not found: ${item.serviceId}` });
+                }
+                const quantity = Number(item.quantity) || 1;
+                const subtotal = service.pricePerUnit * quantity;
+                orderItems.push({
+                    service: service._id,
+                    serviceName: service.name,
+                    serviceType: service.serviceType,
+                    quantity,
+                    unit: service.unit,
+                    pricePerUnit: service.pricePerUnit,
+                    subtotal,
+                });
+            } else {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'Each item must have either serviceId or be a manual item with serviceType="manual"' 
+                });
             }
-            const quantity = Number(item.quantity) || 1;
-            const subtotal = service.pricePerUnit * quantity;
-            orderItems.push({
-                service: service._id,
-                serviceName: service.name,
-                serviceType: service.serviceType,
-                quantity,
-                unit: service.unit,
-                pricePerUnit: service.pricePerUnit,
-                subtotal,
-            });
         }
 
         // Get tax from settings
         const settings = await Settings.findOne();
         const taxPercent = settings?.taxPercent || 0;
 
-        const subtotal = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
+        // Calculate subtotal only from service items (manual items are for tracking only)
+        const subtotal = orderItems
+            .filter(i => i.serviceType !== 'manual')
+            .reduce((sum, i) => sum + i.subtotal, 0);
         const taxAmount = (subtotal * taxPercent) / 100;
         const totalAmount = subtotal + taxAmount;
 

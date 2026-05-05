@@ -37,6 +37,63 @@ const orderItemSchema = new mongoose.Schema({
         required: true,
         min: 0,
     },
+    
+    // NEW FIELDS for item details
+    itemType: {
+        type: String,
+        enum: ['Clothing', 'Linen', 'Accessories', 'Special_Items'],
+        required: false, // Not required for backward compatibility
+    },
+    
+    // NEW FIELDS for refund tracking
+    isRefunded: {
+        type: Boolean,
+        default: false,
+    },
+    refundAmount: {
+        type: Number,
+        default: 0,
+        min: 0,
+    },
+    refundReason: {
+        type: String,
+        enum: ['Damaged', 'Lost', 'Delayed_Service', 'Quality_Issue', 'Customer_Complaint', 'Other', null],
+        default: null,
+    },
+    refundReasonDescription: {
+        type: String,
+        trim: true,
+    },
+    
+    // NEW FIELDS for damage tracking (separate from refunds)
+    damageDetails: {
+        type: String,
+        trim: true,
+    },
+    damagedQuantity: {
+        type: Number,
+        min: 0,
+    },
+    damageReason: {
+        type: String,
+        enum: ['Damaged', 'Lost', 'Delayed_Service', 'Quality_Issue', 'Customer_Complaint', 'Other', null],
+        default: null,
+    },
+    damageReasonDescription: {
+        type: String,
+        trim: true,
+    },
+    damageRecordedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+    },
+    damageRecordedAt: {
+        type: Date,
+    },
+    potentialRefundAmount: {
+        type: Number,
+        min: 0,
+    },
 });
 
 const statusHistorySchema = new mongoose.Schema({
@@ -137,6 +194,35 @@ const orderSchema = new mongoose.Schema(
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
+        },
+        
+        // NEW FIELDS for service time tracking
+        serviceStartTime: {
+            type: Date,
+            default: null,
+        },
+        serviceEndTime: {
+            type: Date,
+            default: null,
+        },
+        serviceDuration: {
+            type: Number, // in hours with 2 decimal precision
+            default: null,
+        },
+        isDelayed: {
+            type: Boolean,
+            default: false,
+        },
+        
+        // NEW FIELDS for refund tracking
+        totalRefundAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        hasRefund: {
+            type: Boolean,
+            default: false,
         },
     },
     { timestamps: true }

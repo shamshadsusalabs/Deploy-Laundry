@@ -14,6 +14,7 @@ const Orders = lazy(() => import('./pages/Orders'));
 const CreateOrder = lazy(() => import('./pages/CreateOrder'));
 const OrderDetail = lazy(() => import('./pages/OrderDetail'));
 const Invoices = lazy(() => import('./pages/Invoices'));
+const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'));
 const Payments = lazy(() => import('./pages/Payments'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Reports = lazy(() => import('./pages/Reports'));
@@ -21,6 +22,8 @@ const Inventory = lazy(() => import('./pages/Inventory'));
 const Deliveries = lazy(() => import('./pages/Deliveries'));
 const SettingsPage = lazy(() => import('./pages/Settings'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const ProcessRefund = lazy(() => import('./pages/ProcessRefund'));
+const RefundAnalytics = lazy(() => import('./pages/RefundAnalytics'));
 
 // Loading Fallback Component
 const PageLoader = () => (
@@ -67,12 +70,23 @@ function App() {
                                 <Route path="/orders" element={<Orders />} />
                                 <Route path="/orders/new" element={<CreateOrder />} />
                                 <Route path="/orders/:id" element={<OrderDetail />} />
+                                <Route path="/orders/:orderId/refund" element={
+                                    <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                                        <ProcessRefund />
+                                    </ProtectedRoute>
+                                } />
                                 <Route path="/customers" element={<Customers />} />
                                 <Route path="/invoices" element={<Invoices />} />
+                                <Route path="/invoices/:invoiceId" element={<InvoiceDetail />} />
                                 <Route path="/payments" element={<Payments />} />
                                 <Route path="/reports" element={
                                     <ProtectedRoute allowedRoles={['admin', 'manager']}>
                                         <Reports />
+                                    </ProtectedRoute>
+                                } />
+                                <Route path="/refunds/analytics" element={
+                                    <ProtectedRoute allowedRoles={['admin', 'manager']}>
+                                        <RefundAnalytics />
                                     </ProtectedRoute>
                                 } />
                                 <Route

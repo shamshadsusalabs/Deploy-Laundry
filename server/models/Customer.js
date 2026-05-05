@@ -47,6 +47,13 @@ const customerSchema = new mongoose.Schema(
             minlength: [6, 'Password must be at least 6 characters'],
             select: false,
         },
+        
+        // NEW FIELD for credit balance from refunds
+        creditBalance: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
     },
     { timestamps: true }
 );

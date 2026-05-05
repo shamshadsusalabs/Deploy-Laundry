@@ -1059,6 +1059,8 @@ PODS:
     - React-perflogger (= 0.73.11)
   - RNCAsyncStorage (1.24.0):
     - React-Core
+  - RNCPicker (2.11.4):
+    - React-Core
   - RNReanimated (3.6.3):
     - glog
     - RCT-Folly (= 2022.05.16.00)
@@ -1130,6 +1132,7 @@ DEPENDENCIES:
   - React-utils (from `../node_modules/react-native/ReactCommon/react/utils`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
+  - "RNCPicker (from `../node_modules/@react-native-picker/picker`)"
   - RNReanimated (from `../node_modules/react-native-reanimated`)
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNVectorIcons (from `../node_modules/react-native-vector-icons`)
@@ -1243,6 +1246,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   RNCAsyncStorage:
     :path: "../node_modules/@react-native-async-storage/async-storage"
+  RNCPicker:
+    :path: "../node_modules/@react-native-picker/picker"
   RNReanimated:
     :path: "../node_modules/react-native-reanimated"
   RNScreens:
@@ -1305,12 +1310,13 @@ SPEC CHECKSUMS:
   React-utils: e8549669b504c18929b2e9aa4d87657e530a91a4
   ReactCommon: 9c38e8797dc2ac72edf63cd18cf450d918575666
   RNCAsyncStorage: b6410dead2732b5c72a7fdb1ecb5651bbcf4674b
+  RNCPicker: 7de564dce1f90b53e386a24001aafc3578233dfe
   RNReanimated: 8adb252a83153bb04b99abf93a09b47d4cac8f92
   RNScreens: 3ce54903891fd6281865ad3e7cfe4c2bb438c70c
   RNVectorIcons: 24c506ef3aab67787a85607b8d4a312ce8f6f3b0
   SocketRocket: f32cd54efbe0f095c4d7594881e52619cfe80b17
   Yoga: a813a6d82538ccba91c54406404e3ed80b48a692
 
-PODFILE CHECKSUM: 2cc52333ec5bf9bb06ed3933c9c7888c7307d749
+PODFILE CHECKSUM: 59b08dc6a303d3c2578f442ac486a9479b03f7e7
 
 COCOAPODS: 1.16.2

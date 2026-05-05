@@ -2,7 +2,10 @@ const Order = require('../models/Order');
 const Customer = require('../models/Customer');
 const Invoice = require('../models/Invoice');
 const Inventory = require('../models/Inventory');
+const Settings = require('../models/Settings');
 const { createNotification } = require('./notificationController');
+const ServiceTimerService = require('../utils/serviceTimerService');
+const RefundRecommenderService = require('../utils/refundRecommenderService');
 
 // @desc    Create order
 // @route   POST /api/orders
@@ -17,6 +20,7 @@ exports.createOrder = async (req, res, next) => {
             taxPercent = 0,
             discountPercent = 0,
             serviceCharge = 0,
+            applyCreditBalance = false,
         } = req.body;
 
         // Verify customer exists
@@ -25,11 +29,56 @@ exports.createOrder = async (req, res, next) => {
             return res.status(404).json({ success: false, message: 'Customer not found' });
         }
 
-        // Calculate totals
-        const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+        // Validate item types and item names
+        const validItemTypes = ['Clothing', 'Linen', 'Accessories', 'Special_Items'];
+        for (const item of items) {
+            // Validate itemType if provided
+            if (item.itemType && !validItemTypes.includes(item.itemType)) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Invalid item type "${item.itemType}". Must be one of: ${validItemTypes.join(', ')}`,
+                });
+            }
+
+            // Validate quantity
+            if (!item.quantity || item.quantity <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Item quantity must be greater than zero',
+                });
+            }
+
+            // Validate pricePerUnit
+            if (item.pricePerUnit === undefined || item.pricePerUnit < 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Item price per unit must be greater than or equal to zero',
+                });
+            }
+
+            // Calculate subtotal if not provided
+            if (!item.subtotal) {
+                item.subtotal = item.quantity * item.pricePerUnit;
+            }
+        }
+
+        // Calculate totals - exclude manual items from billing
+        const billableItems = items.filter(item => item.serviceType !== 'manual');
+        const subtotal = billableItems.reduce((sum, item) => sum + item.subtotal, 0);
         const taxAmount = (subtotal * taxPercent) / 100;
         const discountAmount = (subtotal * discountPercent) / 100;
-        const totalAmount = subtotal + taxAmount - discountAmount + serviceCharge;
+        let totalAmount = subtotal + taxAmount - discountAmount + serviceCharge;
+
+        // Apply credit balance if requested
+        let creditApplied = 0;
+        if (applyCreditBalance && customer.creditBalance > 0) {
+            creditApplied = Math.min(customer.creditBalance, totalAmount);
+            totalAmount -= creditApplied;
+            
+            // Deduct credit from customer
+            customer.creditBalance -= creditApplied;
+            await customer.save();
+        }
 
         const order = await Order.create({
             customer: customerId,
@@ -42,24 +91,27 @@ exports.createOrder = async (req, res, next) => {
             discountPercent,
             discountAmount,
             serviceCharge,
-            totalAmount,
+            totalAmount: subtotal + taxAmount - discountAmount + serviceCharge, // Original total
             createdBy: req.user._id,
         });
 
         // Auto-create invoice
-        await Invoice.create({
+        const invoice = await Invoice.create({
             order: order._id,
             customer: customerId,
             subtotal,
             taxAmount,
             discountAmount,
             serviceCharge,
-            totalAmount,
+            totalAmount: subtotal + taxAmount - discountAmount + serviceCharge,
+            paidAmount: creditApplied, // Credit applied counts as payment
+            balanceDue: totalAmount,
+            paymentStatus: creditApplied > 0 ? (totalAmount === 0 ? 'paid' : 'partial') : 'unpaid',
             createdBy: req.user._id,
         });
 
         const populatedOrder = await Order.findById(order._id)
-            .populate('customer', 'customerId name phone customerType')
+            .populate('customer', 'customerId name phone customerType creditBalance')
             .populate('createdBy', 'name');
 
         // Notify admins/managers
@@ -67,12 +119,17 @@ exports.createOrder = async (req, res, next) => {
             recipientRoles: ['admin', 'manager'],
             type: 'order-created',
             title: 'New Order Created',
-            message: `Order ${order.orderId} created for ${customer.name} — Total: ${totalAmount}`,
+            message: `Order ${order.orderId} created for ${customer.name} — Total: ${order.totalAmount}${creditApplied > 0 ? ` (Credit Applied: ${creditApplied})` : ''}`,
             relatedOrder: order._id,
             relatedCustomer: customerId,
         });
 
-        res.status(201).json({ success: true, data: populatedOrder });
+        res.status(201).json({
+            success: true,
+            data: populatedOrder,
+            creditApplied,
+            invoice,
+        });
     } catch (error) {
         next(error);
     }
@@ -140,7 +197,24 @@ exports.getOrder = async (req, res, next) => {
         // Get associated invoice
         const invoice = await Invoice.findOne({ order: order._id });
 
-        res.status(200).json({ success: true, data: { ...order.toObject(), invoice } });
+        // Group items by itemType
+        const groupedItems = {};
+        order.items.forEach(item => {
+            const type = item.itemType || 'Uncategorized';
+            if (!groupedItems[type]) {
+                groupedItems[type] = [];
+            }
+            groupedItems[type].push(item);
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                ...order.toObject(),
+                invoice,
+                groupedItems,
+            },
+        });
     } catch (error) {
         next(error);
     }
@@ -185,6 +259,26 @@ exports.updateOrderStatus = async (req, res, next) => {
                     quantityUsed: usage.quantityUsed,
                     unit: item.unit,
                 });
+            }
+        }
+
+        // Update service time tracking
+        const timeUpdates = ServiceTimerService.updateServiceTime(order, status);
+        Object.assign(order, timeUpdates);
+
+        // Check for delays if service is completed
+        if (status === 'delivered' && order.serviceDuration) {
+            const settings = await Settings.findById('global');
+            if (settings) {
+                const serviceType = order.items[0]?.serviceType;
+                const expectedDuration = settings.serviceDurationThresholds?.get(serviceType);
+                
+                if (expectedDuration) {
+                    order.isDelayed = RefundRecommenderService.shouldFlagAsDelayed(
+                        order.serviceDuration,
+                        expectedDuration
+                    );
+                }
             }
         }
 
@@ -323,6 +417,205 @@ exports.getDashboardStats = async (req, res, next) => {
                 totalRevenue: totalRevenueAgg[0]?.total || 0,
                 totalCustomers,
             },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Bulk import orders from CSV
+// @route   POST /api/orders/bulk-import
+// @access  Private (Admin, Manager)
+exports.bulkImportOrders = async (req, res, next) => {
+    try {
+        const multer = require('multer');
+        const csv = require('csv-parser');
+        const fs = require('fs');
+        const Service = require('../models/Service');
+
+        // Configure multer for file upload
+        const upload = multer({ dest: 'uploads/' });
+        
+        // Handle file upload
+        upload.single('file')(req, res, async (err) => {
+            if (err) {
+                return res.status(400).json({ success: false, message: 'File upload failed' });
+            }
+
+            if (!req.file) {
+                return res.status(400).json({ success: false, message: 'No file uploaded' });
+            }
+
+            const results = [];
+            const errors = [];
+            let successCount = 0;
+
+            // Parse CSV
+            fs.createReadStream(req.file.path)
+                .pipe(csv())
+                .on('data', (data) => results.push(data))
+                .on('end', async () => {
+                    // Group rows by customer phone
+                    const ordersByCustomer = {};
+
+                    for (const row of results) {
+                        const customerPhone = row['Customer Phone']?.trim();
+                        if (!customerPhone) {
+                            errors.push({ row, error: 'Missing customer phone' });
+                            continue;
+                        }
+
+                        if (!ordersByCustomer[customerPhone]) {
+                            ordersByCustomer[customerPhone] = {
+                                customerName: row['Customer Name']?.trim(),
+                                services: [],
+                                manualItems: [],
+                                deliveryDate: row['Delivery Date']?.trim(),
+                                discountPercent: parseFloat(row['Discount %']) || 0,
+                                specialInstructions: row['Special Instructions']?.trim() || '',
+                            };
+                        }
+
+                        // Add service if present
+                        const serviceName = row['Service Name']?.trim();
+                        const serviceQuantity = parseInt(row['Service Quantity']);
+                        if (serviceName && serviceQuantity) {
+                            ordersByCustomer[customerPhone].services.push({
+                                serviceName,
+                                quantity: serviceQuantity,
+                            });
+                        }
+
+                        // Add manual item if present
+                        const itemType = row['Item Type']?.trim();
+                        const itemName = row['Item Name']?.trim();
+                        const itemQuantity = parseInt(row['Item Quantity']);
+                        const itemPrice = parseFloat(row['Item Price']);
+                        if (itemName && itemQuantity && itemPrice !== undefined) {
+                            ordersByCustomer[customerPhone].manualItems.push({
+                                itemType: itemType || 'Clothing',
+                                itemName,
+                                quantity: itemQuantity,
+                                pricePerUnit: itemPrice,
+                            });
+                        }
+                    }
+
+                    // Create orders
+                    for (const [phone, orderData] of Object.entries(ordersByCustomer)) {
+                        try {
+                            // Find customer by phone
+                            const customer = await Customer.findOne({ phone });
+                            if (!customer) {
+                                errors.push({ phone, error: 'Customer not found' });
+                                continue;
+                            }
+
+                            // Build items array
+                            const items = [];
+
+                            // Add services
+                            for (const serviceData of orderData.services) {
+                                const service = await Service.findOne({ name: serviceData.serviceName });
+                                if (!service) {
+                                    errors.push({ phone, serviceName: serviceData.serviceName, error: 'Service not found' });
+                                    continue;
+                                }
+
+                                items.push({
+                                    service: service._id,
+                                    serviceName: service.name,
+                                    serviceType: service.serviceType,
+                                    itemType: 'Clothing',
+                                    itemName: service.name,
+                                    quantity: serviceData.quantity,
+                                    unit: service.unit,
+                                    pricePerUnit: service.pricePerUnit,
+                                    subtotal: service.pricePerUnit * serviceData.quantity,
+                                });
+                            }
+
+                            // Add manual items
+                            for (const manualItem of orderData.manualItems) {
+                                items.push({
+                                    service: null,
+                                    serviceName: manualItem.itemName,
+                                    serviceType: 'manual',
+                                    itemType: manualItem.itemType,
+                                    itemName: manualItem.itemName,
+                                    quantity: manualItem.quantity,
+                                    unit: 'piece',
+                                    pricePerUnit: manualItem.pricePerUnit,
+                                    subtotal: manualItem.pricePerUnit * manualItem.quantity,
+                                });
+                            }
+
+                            if (items.length === 0) {
+                                errors.push({ phone, error: 'No valid items found' });
+                                continue;
+                            }
+
+                            // Filter billable items (exclude manual items)
+                            const billableItems = items.filter(item => item.serviceType !== 'manual');
+                            const subtotal = billableItems.reduce((sum, item) => sum + item.subtotal, 0);
+                            const taxPercent = 5; // Default tax
+                            const taxAmount = (subtotal * taxPercent) / 100;
+                            const discountAmount = (subtotal * orderData.discountPercent) / 100;
+                            const totalAmount = subtotal + taxAmount - discountAmount;
+
+                            // Create order
+                            const order = await Order.create({
+                                customer: customer._id,
+                                items,
+                                subtotal,
+                                taxPercent,
+                                taxAmount,
+                                discountPercent: orderData.discountPercent,
+                                discountAmount,
+                                totalAmount,
+                                paidAmount: 0,
+                                balanceDue: totalAmount,
+                                status: 'pending',
+                                paymentStatus: 'unpaid',
+                                specialInstructions: orderData.specialInstructions,
+                                deliveryDate: orderData.deliveryDate || undefined,
+                                createdBy: req.user._id,
+                            });
+
+                            // Create invoice
+                            await Invoice.create({
+                                order: order._id,
+                                customer: customer._id,
+                                subtotal,
+                                taxPercent,
+                                taxAmount,
+                                discountPercent: orderData.discountPercent,
+                                discountAmount,
+                                totalAmount,
+                                paidAmount: 0,
+                                balanceDue: totalAmount,
+                                paymentStatus: 'unpaid',
+                                dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
+                            });
+
+                            successCount++;
+                        } catch (error) {
+                            errors.push({ phone, error: error.message });
+                        }
+                    }
+
+                    // Clean up uploaded file
+                    fs.unlinkSync(req.file.path);
+
+                    res.status(200).json({
+                        success: true,
+                        data: {
+                            successCount,
+                            errorCount: errors.length,
+                            errors,
+                        },
+                    });
+                });
         });
     } catch (error) {
         next(error);

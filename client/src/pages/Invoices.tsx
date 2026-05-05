@@ -99,7 +99,7 @@ const Invoices = () => {
     };
 
     /* ─────────────────────────────────────────────
-       Generate printable HTML
+       Generate printable HTML - MATCHES MODAL EXACTLY
     ───────────────────────────────────────────── */
     const generateInvoiceHTML = (inv: any, format: 'a4' | 'thermal' = 'a4') => {
         const biz = inv.business || {};
@@ -110,93 +110,139 @@ const Invoices = () => {
 
         /* ── THERMAL ── */
         if (format === 'thermal') {
+            // Separate items into sections (same as A4)
+            const allItems = items || [];
+            const services = allItems.filter((item: any) => !item.isRefunded && item.serviceType !== 'manual' && item.service);
+            const manualItems = allItems.filter((item: any) => !item.isRefunded && (item.serviceType === 'manual' || !item.service));
+            const refundedItems = allItems.filter((item: any) => item.isRefunded);
+            
             return `
                 <html><head><title>Receipt - ${inv.invoiceId}</title>
                 <style>
                     * { margin: 0; padding: 0; box-sizing: border-box; }
-                    body { font-family: 'Courier New', monospace; width: 80mm; padding: 8mm; font-size: 12px; color: #000; }
+                    body { font-family: 'Courier New', monospace; width: 80mm; padding: 8mm; font-size: 11px; color: #000; }
                     .center { text-align: center; }
                     .bold { font-weight: bold; }
                     .line { border-top: 1px dashed #000; margin: 6px 0; }
                     .row { display: flex; justify-content: space-between; margin: 2px 0; }
                     .item-row { margin: 4px 0; }
-                    h1 { font-size: 16px; margin-bottom: 2px; }
-                    h2 { font-size: 13px; margin: 4px 0; }
-                    .small { font-size: 10px; color: #555; }
+                    .section-header { font-weight: bold; font-size: 10px; margin: 6px 0 3px; text-transform: uppercase; }
+                    .strike { text-decoration: line-through; color: #666; }
+                    .refund { color: #000; }
+                    h1 { font-size: 15px; margin-bottom: 2px; }
+                    h2 { font-size: 12px; margin: 4px 0; }
+                    .small { font-size: 9px; color: #555; }
+                    .info { font-size: 9px; color: #666; font-style: italic; margin: 3px 0; }
                     @media print { body { width: 80mm; } @page { size: 80mm auto; margin: 0; } }
                 </style></head><body>
                     <div class="center">
-                        <img src="${window.location.origin}/logo.jpeg" style="max-height: 40px; margin-bottom: 6px;" alt="Logo" />
+                        <img src="${window.location.origin}/logo.jpeg" style="max-height: 35px; margin-bottom: 4px;" alt="Logo" />
                         <h1>${biz.name || 'Peninsula Laundries'}</h1>
                         <p class="small">${biz.address || ''}</p>
                         <p class="small">${biz.phone || ''} ${biz.email ? '| ' + biz.email : ''}</p>
-                        ${biz.taxNumber ? `<p class="small" style="margin-top: 2px;">${biz.taxNumberLabel || 'Tax No'}: ${biz.taxNumber}</p>` : ''}
+                        ${biz.taxNumber ? `<p class="small" style="margin-top: 2px;">ABN: ${biz.taxNumber}</p>` : ''}
                     </div>
                     <div class="line"></div>
-                    <div class="center"><h2>RECEIPT</h2></div>
+                    <div class="center"><h2>TAX INVOICE</h2></div>
                     <div class="row"><span>Invoice:</span><span class="bold">${inv.invoiceId}</span></div>
                     <div class="row"><span>Order:</span><span>${order.orderId || '-'}</span></div>
-                    <div class="row"><span>Date:</span><span>${new Date(inv.createdAt).toLocaleDateString()}</span></div>
+                    <div class="row"><span>Date:</span><span>${new Date(inv.createdAt).toLocaleDateString('en-AU')}</span></div>
                     <div class="row"><span>Customer:</span><span>${customer.name || '-'}</span></div>
                     <div class="row"><span>Phone:</span><span>${customer.phone || '-'}</span></div>
                     <div class="line"></div>
-                    <div class="center bold" style="margin-bottom: 4px;">ITEMS</div>
-                    ${items.map((item: any) => `
-                        <div class="item-row">
-                            <div>${item.serviceName}</div>
-                            <div class="row small"><span>${item.quantity} ${item.unit} × ${currency}${item.pricePerUnit}</span><span>${currency}${item.subtotal}</span></div>
-                        </div>
-                    `).join('')}
+                    
+                    ${services.length > 0 ? `
+                        <div class="section-header">SERVICES - BILLABLE</div>
+                        ${services.map((item: any) => `
+                            <div class="item-row">
+                                <div class="bold">${item.serviceName || item.itemName}</div>
+                                <div class="row small">
+                                    <span>${item.quantity} × ${currency}${Number(item.pricePerUnit || 0).toFixed(2)}</span>
+                                    <span class="bold">${currency}${Number(item.subtotal || 0).toFixed(2)}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    ` : ''}
+                    
+                    ${manualItems.length > 0 ? `
+                        <div class="section-header">ITEMS - NOT BILLED</div>
+                        ${manualItems.map((item: any) => `
+                            <div class="item-row">
+                                <div>${item.itemName || item.serviceName}</div>
+                                <div class="row small">
+                                    <span>${item.quantity} × <span class="strike">${currency}${Number(item.pricePerUnit || 0).toFixed(2)}</span></span>
+                                    <span>Not Billed</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                        <div class="info center">Tracked for damage reference only</div>
+                    ` : ''}
+                    
+                    ${refundedItems.length > 0 ? `
+                        <div class="section-header">REFUNDED ITEMS</div>
+                        ${refundedItems.map((item: any) => `
+                            <div class="item-row refund">
+                                <div class="bold">${item.serviceName || item.itemName}</div>
+                                ${item.refundReason ? `<div class="small">Reason: ${item.refundReason}</div>` : ''}
+                                <div class="row small">
+                                    <span>${item.damagedQuantity || item.quantity} × ${currency}${Number(item.pricePerUnit || 0).toFixed(2)}</span>
+                                    <span class="bold">-${currency}${Number(item.refundAmount || item.subtotal || 0).toFixed(2)}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    ` : ''}
+                    
                     <div class="line"></div>
-                    <div class="row"><span>Subtotal</span><span>${currency}${inv.subtotal}</span></div>
-                    <div class="row"><span>Tax (${inv.taxPercent || 0}%)</span><span>${currency}${inv.taxAmount || 0}</span></div>
-                    ${inv.discountAmount > 0 ? `<div class="row"><span>Discount (${inv.discountPercent || 0}%)</span><span>-${currency}${inv.discountAmount}</span></div>` : ''}
-                    ${inv.serviceCharge > 0 ? `<div class="row"><span>Service Charge</span><span>${currency}${inv.serviceCharge}</span></div>` : ''}
+                    <div class="row"><span>Subtotal</span><span>${currency}${Number(inv.subtotal || 0).toFixed(2)}</span></div>
+                    <div class="row"><span>Tax (${inv.taxPercent || 0}%)</span><span>${currency}${Number(inv.taxAmount || 0).toFixed(2)}</span></div>
+                    ${(inv.discountAmount || 0) > 0 ? `<div class="row"><span>Discount</span><span>-${currency}${Number(inv.discountAmount).toFixed(2)}</span></div>` : ''}
                     <div class="line"></div>
-                    <div class="row bold" style="font-size: 14px;"><span>TOTAL</span><span>${currency}${inv.totalAmount}</span></div>
-                    <div class="row"><span>Paid</span><span>${currency}${inv.paidAmount}</span></div>
-                    <div class="row bold"><span>Balance</span><span>${currency}${inv.balanceDue}</span></div>
+                    <div class="row bold" style="font-size: 13px;"><span>TOTAL</span><span>${currency}${Number(inv.totalAmount || 0).toFixed(2)}</span></div>
+                    <div class="row"><span>Paid</span><span>${currency}${Number(inv.paidAmount || 0).toFixed(2)}</span></div>
+                    <div class="row bold">
+                        <span>${(inv.balanceDue || 0) < 0 ? 'Refund Due' : 'Balance Due'}</span>
+                        <span>${(inv.balanceDue || 0) < 0 ? '-' : ''}${currency}${Math.abs(Number(inv.balanceDue || 0)).toFixed(2)}</span>
+                    </div>
                     <div class="line"></div>
                     ${payments.length > 0 ? `
                         <div class="center bold small" style="margin-bottom: 4px;">PAYMENTS</div>
                         ${payments.map((p: any) => `
-                            <div class="row small"><span>${p.paymentMethod} - ${new Date(p.createdAt).toLocaleDateString()}</span><span>${currency}${p.amount}</span></div>
+                            <div class="row small"><span>${p.paymentMethod} - ${new Date(p.createdAt).toLocaleDateString('en-AU')}</span><span>${currency}${p.amount}</span></div>
                         `).join('')}
                         <div class="line"></div>
                     ` : ''}
-                    <div class="center small" style="margin-top: 8px;">
+                    <div class="center small" style="margin-top: 6px;">
                         <p>Thank you for choosing us!</p>
-                        <p style="margin-top: 4px;">*** ${biz.name || 'Peninsula Laundries'} ***</p>
+                        <p style="margin-top: 3px;">*** ${biz.name || 'Peninsula Laundries'} ***</p>
                     </div>
                 </body></html>
             `;
         }
 
-        /* ── A4 Professional Invoice ── */
+        /* ── A4 Professional Invoice - MATCHES MODAL EXACTLY ── */
         const invoiceDate = new Date(inv.createdAt);
         const dueDateStr = inv.dueDate
             ? new Date(inv.dueDate).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()
-            : new Date(invoiceDate.getTime() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
-        const invoiceDateStr = invoiceDate.toLocaleDateString('en-AU', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase().replace(',', '.');
+            : 'NET 14';
+        const invoiceDateStr = invoiceDate.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
 
-        const groupedItems: any[] = items.map((item: any) => ({
-            deliveryDate: item.deliveryDate || item.shipDate || '',
-            name: item.serviceName || item.name || '',
-            quantity: item.quantity || 0,
-            rate: item.pricePerUnit || item.rate || 0,
-            total: item.subtotal || item.total || 0,
-        }));
-
-        const creditedItems: any[] = (inv.creditedItems || []).map((item: any) => ({
-            name: item.serviceName || item.name || '',
-            quantity: item.quantity || 0,
-            rate: item.pricePerUnit || item.rate || 0,
-            total: item.subtotal || item.total || 0,
-        }));
+        // Separate items into sections (SAME AS MODAL)
+        const allItems = items || [];
+        const services = allItems.filter((item: any) => !item.isRefunded && item.serviceType !== 'manual' && item.service);
+        const manualItems = allItems.filter((item: any) => !item.isRefunded && (item.serviceType === 'manual' || !item.service));
+        const refundedItems = allItems.filter((item: any) => item.isRefunded);
+        
+        const deliveryDate = order.deliveryDate;
+        const formattedDate = deliveryDate 
+            ? new Date(deliveryDate).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
+            : '—';
 
         const subtotal = inv.subtotal || 0;
         const taxAmount = inv.taxAmount || 0;
         const totalAmount = inv.totalAmount || 0;
+        const paidAmount = inv.paidAmount || 0;
+        const balanceDue = inv.balanceDue || 0;
+        const discountAmount = inv.discountAmount || 0;
         const invoiceNumber = inv.invoiceNumber || inv.invoiceId || '';
         const paymentAccountName = biz.bankAccountName || 'JSP CORPORATION PTY LTD';
         const paymentBank = biz.bankName || 'ANZ';
@@ -205,185 +251,274 @@ const Invoices = () => {
         const abn = biz.taxNumber || biz.abn || '31647801045';
         const terms = inv.terms || 'NET 14';
 
+        // Inline styles object (like mrLuxury approach)
+        const styles = {
+            page: 'max-width: 900px; margin: 0 auto; padding: 24px; font-family: Arial, sans-serif; font-size: 12px; color: #1a1a2e; background: #fff;',
+            header: 'display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; margin-bottom: 16px;',
+            logoBlock: 'display: flex; flex-direction: column; gap: 4px;',
+            logo: 'max-height: 56px; max-width: 110px; object-fit: contain; margin-bottom: 4px;',
+            tagline: 'font-size: 7px; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;',
+            contactLine: 'display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569;',
+            centerBlock: 'flex: 1;',
+            companyName: 'font-size: 14px; font-weight: 700; color: #1a1a2e; margin-bottom: 4px;',
+            ta: 'font-size: 11px; color: #64748b; margin-bottom: 8px;',
+            address: 'display: flex; align-items: flex-start; gap: 6px; font-size: 11px; color: #475569;',
+            rightBlock: 'text-align: right;',
+            abnLabel: 'font-size: 9px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 4px;',
+            abnValue: 'font-size: 18px; font-weight: 900; color: #1a1a2e; letter-spacing: 1px; margin-bottom: 12px;',
+            taxStrip: 'display: flex; justify-content: space-between; align-items: center; margin: 16px 0;',
+            taxBtn: 'background: #1c2a5e; color: #fff; font-size: 13px; font-weight: 700; padding: 8px 20px; border-radius: 8px; letter-spacing: 1px;',
+            billSection: 'display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: flex-start; margin-bottom: 12px;',
+            billLabel: 'font-size: 9px; text-transform: uppercase; letter-spacing: 2px; color: #94a3b8; font-weight: 600; margin-bottom: 6px;',
+            custName: 'font-weight: 700; color: #1a1a2e; font-size: 14px; margin-bottom: 4px;',
+            metaBar: 'display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; font-size: 12px; margin-bottom: 14px;',
+            metaCell: 'padding: 10px 12px; border-right: 1px solid #cbd5e1;',
+            metaCellAlt: 'padding: 10px 12px; border-right: 1px solid #cbd5e1; background: #f8fafc;',
+            metaCellLast: 'padding: 10px 12px;',
+            metaCellLastAlt: 'padding: 10px 12px; background: #f8fafc;',
+            metaLabel: 'font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #94a3b8; margin-bottom: 4px; font-weight: 600;',
+            metaValue: 'font-weight: 700; color: #1a1a2e; font-size: 12px;',
+            metaValueRed: 'font-weight: 700; color: #dc2626; font-size: 12px;',
+            metaValueBlue: 'font-weight: 700; color: #1c2a5e; font-size: 12px;',
+            table: 'width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; margin-bottom: 12px;',
+            thead: 'background: #1c2a5e; color: #fff;',
+            th: 'padding: 8px 12px; font-size: 11px; font-weight: 700; text-align: left;',
+            thRight: 'padding: 8px 12px; font-size: 11px; font-weight: 700; text-align: right;',
+            thCenter: 'padding: 8px 12px; font-size: 11px; font-weight: 700; text-align: center;',
+            sectionHeader: 'background: #f1f5f9; padding: 8px 12px; font-weight: 700; font-size: 10px; text-transform: uppercase; color: #475569;',
+            td: 'padding: 8px 12px; font-size: 11px; color: #1a1a2e; border-bottom: 1px solid #e2e8f0;',
+            tdRight: 'padding: 8px 12px; font-size: 11px; color: #1a1a2e; border-bottom: 1px solid #e2e8f0; text-align: right;',
+            tdCenter: 'padding: 8px 12px; font-size: 11px; color: #1a1a2e; border-bottom: 1px solid #e2e8f0; text-align: center;',
+            tdStrike: 'padding: 8px 12px; font-size: 11px; color: #94a3b8; border-bottom: 1px solid #e2e8f0; text-align: right; text-decoration: line-through;',
+            tdNotBilled: 'padding: 8px 12px; font-size: 11px; color: #64748b; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600;',
+            tdRed: 'padding: 8px 12px; font-size: 11px; color: #b91c1c; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 700;',
+            infoRow: 'background: #f8fafc; border-bottom: 1px solid #e2e8f0;',
+            infoText: 'padding: 8px 12px; text-align: center; font-size: 10px; color: #64748b;',
+            bottomSection: 'display: flex; justify-content: space-between; align-items: flex-end; padding-top: 8px;',
+            note: 'font-size: 10px; color: #3b82f6; font-style: italic;',
+            summaryBlock: 'text-align: right; min-width: 200px;',
+            amountDueBtn: 'background: #1c2a5e; color: #fff; font-size: 14px; font-weight: 700; padding: 8px 24px; border-radius: 8px; display: inline-block; margin-bottom: 12px; letter-spacing: 1px;',
+            summaryRow: 'display: flex; justify-content: space-between; gap: 48px; font-size: 12px; color: #64748b; margin-bottom: 6px;',
+            summaryTotal: 'display: flex; justify-content: space-between; gap: 48px; background: #1c2a5e; color: #fff; font-weight: 900; font-size: 14px; padding: 8px 16px; border-radius: 8px; margin-top: 8px; margin-bottom: 8px;',
+            summaryPaid: 'display: flex; justify-content: space-between; gap: 48px; font-size: 11px; color: #64748b; padding: 0 4px; margin-bottom: 4px;',
+            paymentSection: 'display: flex; gap: 20px; padding-top: 16px; border-top: 1px solid #cbd5e1; margin-top: 16px;',
+            paymentBox: 'background: #f8fafc; border-radius: 12px; padding: 16px; min-width: 220px;',
+            paymentTitle: 'display: flex; align-items: center; gap: 6px; font-weight: 700; color: #1a1a2e; font-size: 12px; margin-bottom: 8px;',
+            paymentText: 'font-size: 11px; color: #475569; line-height: 1.7;',
+            disclaimer: 'font-size: 10px; color: #64748b; line-height: 1.6; flex: 1; padding-top: 4px;',
+            disclaimerTitle: 'font-weight: 700; color: #3b82f6; font-size: 11px; margin-bottom: 6px;',
+        };
+
         return `
             <html><head><title>Tax Invoice - ${invoiceNumber}</title>
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
-                body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #1a1a2e; font-size: 12px; }
-                .page { max-width: 820px; margin: 0 auto; padding: 30px 36px; }
-                .top-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 18px; border-bottom: 1.5px solid #ccc; }
-                .logo-block img { max-height: 64px; max-width: 160px; object-fit: contain; }
-                .logo-block .tagline { font-size: 9px; letter-spacing: 3px; color: #888; margin-top: 4px; text-transform: uppercase; text-align: center; }
-                .contact-block { text-align: center; font-size: 11px; color: #333; line-height: 1.7; }
-                .contact-block .icon-line { display: flex; align-items: center; justify-content: center; gap: 5px; }
-                .contact-block .ic { width: 14px; height: 14px; }
-                .tax-strip { display: flex; justify-content: space-between; align-items: center; margin: 18px 0 14px; }
-                .tax-invoice-btn { background: #1c2a5e; color: #fff; font-size: 13px; font-weight: bold; padding: 8px 22px; border-radius: 4px; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
-                .tax-invoice-btn .plus { font-size: 18px; font-weight: 300; }
-                .abn-right { font-size: 18px; font-weight: 900; color: #1a1a2e; letter-spacing: 2px; }
-                .bill-meta { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-                .bill-to .cust-name { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
-                .bill-to .address-icon { display: flex; align-items: flex-start; gap: 5px; }
-                .bill-to .address-icon .ic { margin-top: 2px; min-width: 14px; }
-                .meta-numbers { display: flex; gap: 0; border: 1px solid #ccc; margin-bottom: 14px; }
-                .meta-cell { flex: 1; padding: 6px 10px; border-right: 1px solid #ccc; }
-                .meta-cell:last-child { border-right: none; }
-                .meta-cell .mc-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-bottom: 2px; }
-                .meta-cell .mc-value { font-size: 12px; font-weight: 700; color: #1a1a2e; }
-                .meta-cell .mc-value.due { color: #cc0000; }
-                .items-table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
-                .items-table thead tr { background: #1c2a5e; color: #fff; }
-                .items-table thead th { padding: 8px; font-size: 11px; font-weight: 700; text-align: left; letter-spacing: 0.5px; }
-                .items-table thead th.right { text-align: right; }
-                .items-table tbody tr { border-bottom: 1px solid #e0e0e0; }
-                .items-table tbody tr:nth-child(even) { background: #f9f9f9; }
-                .items-table tbody td { padding: 6px 8px; font-size: 11px; color: #1a1a2e; border-bottom: 1px solid #e8e8e8; vertical-align: top; }
-                .items-table tbody td.right { text-align: right; }
-                .items-table tbody td.bold { font-weight: 700; }
-                .credited-label { font-size: 11px; font-weight: 700; color: #1a1a2e; padding: 6px 8px; background: #f3f3f3; border-top: 1.5px solid #ccc; }
-                .credited-row td { color: #cc0000; }
-                .bottom-section { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; }
-                .note { font-size: 10px; color: #0047cc; font-style: italic; }
-                .amount-due-btn { background: #1c2a5e; color: #fff; font-size: 14px; font-weight: 700; padding: 9px 28px; border-radius: 4px; display: inline-block; margin-bottom: 8px; letter-spacing: 1px; }
-                .summary-lines { font-size: 12px; color: #1a1a2e; line-height: 1.8; text-align: right; }
-                .summary-lines .s-row { display: flex; justify-content: space-between; gap: 40px; }
-                .summary-lines .s-total { font-size: 14px; font-weight: 900; background: #1c2a5e; color: #fff; padding: 6px 12px; border-radius: 3px; margin-top: 4px; }
-                .payment-section { margin-top: 18px; border-top: 1.5px solid #ccc; padding-top: 14px; display: flex; gap: 30px; align-items: flex-start; }
-                .payment-block { font-size: 11px; color: #1a1a2e; line-height: 1.7; }
-                .payment-block .pay-title { font-size: 12px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
-                .disclaimer-block { font-size: 10px; color: #555; line-height: 1.6; flex: 1; }
-                .disclaimer-block .disc-label { font-weight: 700; color: #0047cc; font-size: 11px; margin-bottom: 2px; }
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                @page { size: A4 portrait; margin: 12mm; }
                 @media print {
-                    body { font-size: 11px; }
-                    .page { padding: 15px 20px; }
-                    @page { size: A4; margin: 10mm; }
+                    html, body { background: #ffffff !important; margin: 0 !important; padding: 0 !important; }
+                    body * { visibility: hidden; }
+                    .invoice-print-shell, .invoice-print-shell * { visibility: visible; }
+                    .invoice-print-shell { position: absolute; left: 0; top: 0; width: 100%; }
                 }
             </style></head><body>
-            <div class="page">
-                <!-- TOP HEADER -->
-                <div class="top-header">
-                    <div class="logo-block">
-                        <img src="${window.location.origin}/logo.jpeg" alt="Peninsula Laundries Logo" />
-                        <div class="tagline">L A U N D R I E S</div>
-                    </div>
-                    <div class="contact-block">
-                        <div class="icon-line">
-                            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#1c2a5e" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                            <span>${biz.companyName || 'JSP Corporation Pty Ltd T/A Peninsula'}<br/>Laundries<br/>${biz.address || '13 Redcliffe Gardens Drive'}<br/>${biz.suburb || 'Clontarf'}, ${biz.state || 'Queensland'}, ${biz.postcode || '4019'}, Australia</span>
-                        </div>
-                        <div class="icon-line" style="margin-top:6px;">
-                            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#1c2a5e" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 015.33 12a19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 8.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
-                            ${biz.phone || '61475902921'}
-                        </div>
-                        <div class="icon-line" style="margin-top:4px;">
-                            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#1c2a5e" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+            <div class="invoice-print-shell" style="${styles.page}">
+                <!-- HEADER SECTION - MATCHING MODAL EXACTLY -->
+                <div style="${styles.header}">
+                    <!-- LEFT: Logo + Website + Email -->
+                    <div style="${styles.logoBlock}">
+                        <img src="${window.location.origin}/logo.jpeg" alt="Peninsula Laundries" style="${styles.logo}" />
+                        <div style="${styles.tagline}">L A U N D R I E S</div>
+                        <div style="${styles.contactLine}">
+                            <span>🌐</span>
                             ${biz.website || 'peninsulalaundries.com.au'}
                         </div>
-                        <div class="icon-line" style="margin-top:4px;">
-                            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#1c2a5e" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        <div style="${styles.contactLine}">
+                            <span>📧</span>
                             ${biz.email || 'orders@peninsulalaundries.com.au'}
                         </div>
                     </div>
-                    <div style="text-align:right; font-size:18px; font-weight:900; color:#1a1a2e; letter-spacing:2px;">
-                        A.B.N.<br/>${abn}
-                    </div>
-                </div>
-
-                <!-- TAX INVOICE STRIP -->
-                <div class="tax-strip">
-                    <div class="tax-invoice-btn">
-                        <span class="plus">+</span> Tax Invoice
-                    </div>
-                    <div style="font-size:11px; color:#555; text-align:right;">
-                        <strong>Invoice #:</strong> ${invoiceNumber}
-                    </div>
-                </div>
-
-                <!-- BILL TO -->
-                <div class="bill-meta">
-                    <div class="bill-to">
-                        <div class="cust-name">${customer.name || '-'}</div>
-                        <div class="address-icon">
-                            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="#1c2a5e" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                            <span>${customer.address || ''}<br/>${customer.suburb || customer.city || ''}, ${customer.postcode || ''}, ${customer.state || 'Australia'}</span>
+                    
+                    <!-- CENTER: Company Name + Address -->
+                    <div style="${styles.centerBlock}">
+                        <div style="${styles.companyName}">
+                            ${biz.companyName || 'JSP Corporation Pty Ltd'}
                         </div>
-                        ${customer.email ? `<div style="margin-top:3px; font-size:11px; color:#555;">${customer.email}</div>` : ''}
+                        <div style="${styles.ta}">T/A Peninsula Laundries</div>
+                        <div style="${styles.address}">
+                            <span>📍</span>
+                            <span>
+                                ${biz.address || '13 Redcliffe Gardens Drive'}<br/>
+                                ${biz.suburb || 'Clontarf'}, ${biz.state || 'Queensland'} ${biz.postcode || '4019'}, Australia
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <!-- RIGHT: ABN + Phone -->
+                    <div style="${styles.rightBlock}">
+                        <div style="${styles.abnLabel}">A.B.N.</div>
+                        <div style="${styles.abnValue}">${abn}</div>
+                        <div style="${styles.contactLine}">
+                            <span>📞</span>
+                            ${biz.phone || '61475902921'}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAX INVOICE STRIP + BILL TO -->
+                <div style="${styles.billSection}">
+                    <!-- Bill To -->
+                    <div>
+                        <div style="${styles.billLabel}">Bill To</div>
+                        <div style="${styles.custName}">${customer.name || '—'}</div>
+                        ${(customer.address || customer.suburb) ? `
+                            <div style="${styles.address}">
+                                <span>📍</span>
+                                <span>
+                                    ${customer.address ? customer.address + '<br/>' : ''}
+                                    ${[customer.suburb || customer.city, customer.state, customer.postcode, 'Australia'].filter(Boolean).join(', ')}
+                                </span>
+                            </div>
+                        ` : ''}
+                        ${customer.phone ? `<div style="${styles.contactLine}"><span>📞</span>${customer.phone}</div>` : ''}
+                        ${customer.email ? `<div style="${styles.contactLine}"><span>📧</span>${customer.email}</div>` : ''}
+                    </div>
+                    
+                    <!-- Tax Invoice Badge -->
+                    <div style="text-align: right;">
+                        <div style="${styles.taxBtn}">
+                            <span style="font-size: 20px; font-weight: 300;">+</span> Tax Invoice
+                        </div>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 8px;">
+                            <span style="font-weight: 600; color: #475569;">Invoice #: </span>${invoiceNumber}
+                        </div>
                     </div>
                 </div>
 
                 <!-- META NUMBERS BAR -->
-                <div class="meta-numbers">
-                    <div class="meta-cell"><div class="mc-label">Invoice#</div><div class="mc-value">${invoiceNumber}</div></div>
-                    <div class="meta-cell"><div class="mc-label">Invoice Date</div><div class="mc-value">${invoiceDateStr}</div></div>
-                    <div class="meta-cell"><div class="mc-label">Due Date</div><div class="mc-value due">${dueDateStr}</div></div>
-                    <div class="meta-cell"><div class="mc-label">Total</div><div class="mc-value">${currency}${Number(totalAmount).toFixed(2)}</div></div>
-                    <div class="meta-cell"><div class="mc-label">Terms</div><div class="mc-value">${terms}</div></div>
+                <div style="${styles.metaBar}">
+                    <div style="${styles.metaCell}"><div style="${styles.metaLabel}">INVOICE #</div><div style="${styles.metaValue}">${invoiceNumber}</div></div>
+                    <div style="${styles.metaCellAlt}"><div style="${styles.metaLabel}">DATE</div><div style="${styles.metaValue}">${invoiceDateStr}</div></div>
+                    <div style="${styles.metaCell}"><div style="${styles.metaLabel}">DUE DATE</div><div style="${styles.metaValueRed}">${dueDateStr}</div></div>
+                    <div style="${styles.metaCellAlt}"><div style="${styles.metaLabel}">TOTAL</div><div style="${styles.metaValueBlue}">${currency}${Number(totalAmount).toFixed(2)}</div></div>
+                    <div style="${styles.metaCellLast}"><div style="${styles.metaLabel}">TERMS</div><div style="${styles.metaValue}">${terms}</div></div>
                 </div>
 
-                <!-- ITEMS TABLE -->
-                <table class="items-table">
-                    <thead>
+                <!-- ITEMS TABLE WITH 3 SECTIONS - MATCHING MODAL -->
+                <table style="${styles.table}">
+                    <thead style="${styles.thead}">
                         <tr>
-                            <th>Delivery Date</th>
-                            <th>Item Name</th><th class="right">Quantity</th><th class="right">Rate</th><th class="right">Total</th>
+                            <th style="${styles.th}">Delivery Date</th>
+                            <th style="${styles.th}">Item Name</th>
+                            <th style="${styles.thCenter}">Qty</th>
+                            <th style="${styles.thRight}">Rate</th>
+                            <th style="${styles.thRight}">Total</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${groupedItems.map((item: any, idx: number) => {
-                            const prevItem = idx > 0 ? groupedItems[idx - 1] : null;
-                            const showDate = !prevItem || prevItem.deliveryDate !== item.deliveryDate;
-                            return `<tr>
-                                <td class="bold">${showDate && item.deliveryDate ? item.deliveryDate : (item.deliveryDate ? '...' : '')}</td>
-                                <td>${item.name}</td>
-                                <td class="right">${item.quantity}</td>
-                                <td class="right">${currency}${Number(item.rate).toFixed(2)}</td>
-                                <td class="right">${currency}${Number(item.total).toFixed(2)}</td>
-                            </tr>`;
-                        }).join('')}
+                        ${services.length > 0 ? `
+                            <tr style="${styles.sectionHeader}">
+                                <td colspan="5">🔧 Services - Billable</td>
+                            </tr>
+                            ${services.map((item: any, idx: number) => `
+                                <tr>
+                                    <td style="${styles.td}">${idx === 0 ? formattedDate : '—'}</td>
+                                    <td style="${styles.td}">${item.serviceName || item.itemName}</td>
+                                    <td style="${styles.tdCenter}">${item.quantity}</td>
+                                    <td style="${styles.tdRight}">${currency}${Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                    <td style="${styles.tdRight}">${currency}${Number(item.subtotal || 0).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        ` : ''}
+                        
+                        ${manualItems.length > 0 ? `
+                            <tr style="${styles.sectionHeader}">
+                                <td colspan="5">📦 Items - Tracking Only (Not Billed)</td>
+                            </tr>
+                            ${manualItems.map((item: any, idx: number) => `
+                                <tr>
+                                    <td style="${styles.td}">${idx === 0 ? formattedDate : '—'}</td>
+                                    <td style="${styles.td}">${item.itemName || item.serviceName}</td>
+                                    <td style="${styles.tdCenter}">${item.quantity}</td>
+                                    <td style="${styles.tdStrike}">${currency}${Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                    <td style="${styles.tdNotBilled}">Not Billed</td>
+                                </tr>
+                            `).join('')}
+                            <tr style="${styles.infoRow}">
+                                <td colspan="5" style="${styles.infoText}">
+                                    ℹ️ These items are tracked for damage reference only and NOT included in billing
+                                </td>
+                            </tr>
+                        ` : ''}
+                        
+                        ${refundedItems.length > 0 ? `
+                            <tr style="${styles.sectionHeader}">
+                                <td colspan="5">🔄 Refunded Items</td>
+                            </tr>
+                            ${refundedItems.map((item: any, idx: number) => `
+                                <tr>
+                                    <td style="${styles.td}">${idx === 0 ? formattedDate : '—'}</td>
+                                    <td style="${styles.td}">
+                                        ${item.serviceName || item.itemName}
+                                        ${item.refundReason ? `<br/><span style="font-size: 10px; color: #dc2626;">Reason: ${item.refundReason}</span>` : ''}
+                                    </td>
+                                    <td style="${styles.tdCenter}">${item.damagedQuantity || item.quantity}</td>
+                                    <td style="${styles.tdRight}">${currency}${Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                    <td style="${styles.tdRed}">-${currency}${Number(item.refundAmount || item.subtotal || 0).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        ` : ''}
                     </tbody>
                 </table>
 
-                ${creditedItems.length > 0 ? `
-                    <div class="credited-label">CREDITED ITEMS</div>
-                    <table class="items-table">
-                        <tbody>
-                            ${creditedItems.map((item: any) => `
-                                <tr class="credited-row">
-                                    <td>${item.name}:</td>
-                                    <td class="right">${item.quantity}</td>
-                                    <td class="right">${currency}${Number(item.rate).toFixed(2)}</td>
-                                    <td class="right">(${currency}${Math.abs(Number(item.total)).toFixed(2)})</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                ` : ''}
-
-                <!-- BOTTOM SECTION -->
-                <div class="bottom-section">
-                    <div class="note">Items marked with * are rental carts.</div>
-                    <div style="text-align:right;">
-                        <div class="amount-due-btn">AMOUNT DUE</div>
-                        <div class="summary-lines">
-                            <div class="s-row"><span>Sub Total:</span><span>${currency}${Number(subtotal).toFixed(2)}</span></div>
-                            <div class="s-row"><span>Sales Tax:</span><span>${currency}${Number(taxAmount).toFixed(2)}</span></div>
-                            <div class="s-row s-total"><span>TOTAL</span><span>${currency}${Number(totalAmount).toFixed(2)}</span></div>
+                <!-- BOTTOM SECTION - MATCHING MODAL -->
+                <div style="${styles.bottomSection}">
+                    <div style="${styles.note}">* Items marked with * are rental carts.</div>
+                    <div style="${styles.summaryBlock}">
+                        <div style="${styles.amountDueBtn}">AMOUNT DUE</div>
+                        <div style="${styles.summaryRow}">
+                            <span>Sub Total</span>
+                            <span style="font-weight: 600; color: #475569;">${currency}${Number(subtotal).toFixed(2)}</span>
+                        </div>
+                        <div style="${styles.summaryRow}">
+                            <span>Sales Tax</span>
+                            <span style="font-weight: 600; color: #475569;">${currency}${Number(taxAmount).toFixed(2)}</span>
+                        </div>
+                        ${discountAmount > 0 ? `
+                            <div style="${styles.summaryRow}">
+                                <span>Discount</span>
+                                <span style="font-weight: 600; color: #10b981;">-${currency}${Number(discountAmount).toFixed(2)}</span>
+                            </div>
+                        ` : ''}
+                        <div style="${styles.summaryTotal}">
+                            <span>TOTAL</span>
+                            <span>${currency}${Number(totalAmount).toFixed(2)}</span>
+                        </div>
+                        <div style="${styles.summaryPaid}">
+                            <span>Paid</span>
+                            <span style="color: #10b981; font-weight: 600;">${currency}${Number(paidAmount).toFixed(2)}</span>
+                        </div>
+                        <div style="${styles.summaryPaid}">
+                            <span>${balanceDue < 0 ? 'Refund Due to Customer' : 'Balance Due'}</span>
+                            <span style="font-weight: 700; color: ${balanceDue > 0 ? '#dc2626' : '#10b981'};">${balanceDue < 0 ? '-' : ''}${currency}${Math.abs(Number(balanceDue)).toFixed(2)}</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- PAYMENT + DISCLAIMER -->
-                <div class="payment-section">
-                    <div class="payment-block">
-                        <div class="pay-title">🏦 PAYMENT</div>
-                        <div><strong>Direct Deposit:</strong></div>
-                        <div>Account Name: ${paymentAccountName}</div>
-                        <div>Bank: ${paymentBank} &nbsp; BSB: ${paymentBSB}</div>
-                        <div>Account NO: ${paymentAccountNo}</div>
+                <!-- PAYMENT + DISCLAIMER - MATCHING MODAL -->
+                <div style="${styles.paymentSection}">
+                    <div style="${styles.paymentBox}">
+                        <div style="${styles.paymentTitle}">🏦 PAYMENT</div>
+                        <div style="${styles.paymentText}">
+                            <div><strong>Direct Deposit:</strong></div>
+                            <div>Account Name: ${paymentAccountName}</div>
+                            <div>Bank: ${paymentBank} &nbsp; BSB: ${paymentBSB}</div>
+                            <div>Account NO: ${paymentAccountNo}</div>
+                        </div>
                     </div>
-                    <div class="disclaimer-block">
-                        <div class="disc-label">Disclaimer:</div>
-                        <div>${biz.name || 'JSP Corporation Pty Ltd T/as Peninsula Laundries'} reserves the right to claim ownership of any linen that has not been returned. We also reserve the right to seek legal advice and pursue recovery of replacement costs for any unreturned or missing items.</div>
+                    <div style="${styles.disclaimer}">
+                        <div style="${styles.disclaimerTitle}">Disclaimer:</div>
+                        ${biz.name || 'JSP Corporation Pty Ltd T/as Peninsula Laundries'} reserves the right to claim ownership of any linen that has not been returned. We also reserve the right to seek legal advice and pursue recovery of replacement costs for any unreturned or missing items.
                     </div>
                 </div>
             </div>
@@ -622,9 +757,15 @@ const Invoices = () => {
                                             {currency}{inv.paidAmount?.toLocaleString()}
                                         </td>
                                         <td className="px-5 py-4 text-right">
-                                            <span className={`font-semibold ${inv.balanceDue > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
-                                                {currency}{inv.balanceDue?.toLocaleString()}
-                                            </span>
+                                            {inv.balanceDue < 0 ? (
+                                                <span className="font-semibold text-emerald-600">
+                                                    Refund {currency}{Math.abs(inv.balanceDue)?.toLocaleString()}
+                                                </span>
+                                            ) : (
+                                                <span className={`font-semibold ${inv.balanceDue > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                                                    {currency}{inv.balanceDue?.toLocaleString()}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-5 py-4 text-center">
                                             <StatusBadge status={inv.paymentStatus} />
@@ -716,43 +857,46 @@ const Invoices = () => {
                         <div className="overflow-y-auto flex-1 p-6 space-y-4">
 
                             {/* ── BUSINESS HEADER: Logo | Contact | ABN ── */}
-                            <div className="grid grid-cols-3 items-start gap-4 pb-4 border-b border-slate-200">
+                            <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-200">
 
-                                {/* LEFT: Logo */}
+                                {/* LEFT: Logo + Website + Email */}
                                 <div className="flex flex-col items-start gap-1">
-                                    <img src="/logo.jpeg" alt="Peninsula Laundries" className="max-h-16 max-w-[130px] object-contain" />
-                                    <span className="text-[8px] tracking-[3px] text-slate-400 uppercase font-semibold">L A U N D R I E S</span>
-                                </div>
-
-                                {/* CENTER: Business Contact */}
-                                <div className="text-center text-xs text-slate-600 space-y-1.5">
-                                    <div className="flex items-start justify-center gap-1.5">
-                                        <svg className="w-3.5 h-3.5 mt-0.5 text-[#1c2a5e] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                                        <span className="leading-relaxed text-left">
-                                            <strong>{viewInvoice.business?.companyName || 'JSP Corporation Pty Ltd T/A Peninsula Laundries'}</strong><br />
-                                            {viewInvoice.business?.address || '13 Redcliffe Gardens Drive'}<br />
-                                            {viewInvoice.business?.suburb || 'Clontarf'}, {viewInvoice.business?.state || 'Queensland'} {viewInvoice.business?.postcode || '4019'}, Australia
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-center gap-1.5">
-                                        <svg className="w-3.5 h-3.5 text-[#1c2a5e] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 015.33 12a19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 8.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
-                                        {viewInvoice.business?.phone || '61475902921'}
-                                    </div>
-                                    <div className="flex items-center justify-center gap-1.5">
-                                        <svg className="w-3.5 h-3.5 text-[#1c2a5e] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+                                    <img src="/logo.jpeg" alt="Peninsula Laundries" className="max-h-14 max-w-[110px] object-contain mb-1" />
+                                    <span className="text-[7px] tracking-[2px] text-slate-400 uppercase font-semibold mb-2">L A U N D R I E S</span>
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                                        <svg className="w-3 h-3 text-[#1c2a5e] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
                                         {viewInvoice.business?.website || 'peninsulalaundries.com.au'}
                                     </div>
-                                    <div className="flex items-center justify-center gap-1.5">
-                                        <svg className="w-3.5 h-3.5 text-[#1c2a5e] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                                    <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                                        <svg className="w-3 h-3 text-[#1c2a5e] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                                         {viewInvoice.business?.email || 'orders@peninsulalaundries.com.au'}
                                     </div>
                                 </div>
 
-                                {/* RIGHT: ABN */}
+                                {/* CENTER: Business Name + Address */}
+                                <div className="flex-1 text-xs text-slate-700">
+                                    <div className="font-bold text-sm text-[#1a1a2e] mb-1">
+                                        {viewInvoice.business?.companyName || 'JSP Corporation Pty Ltd'}
+                                    </div>
+                                    <div className="text-xs text-slate-500 mb-2">T/A Peninsula Laundries</div>
+                                    <div className="flex items-start gap-1.5 text-slate-600">
+                                        <svg className="w-3.5 h-3.5 mt-0.5 text-[#1c2a5e] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                        <span className="leading-relaxed">
+                                            {viewInvoice.business?.address || '13 Redcliffe Gardens Drive'}<br />
+                                            {viewInvoice.business?.suburb || 'Clontarf'}, {viewInvoice.business?.state || 'Queensland'} {viewInvoice.business?.postcode || '4019'}, Australia
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* RIGHT: ABN + Phone */}
                                 <div className="text-right">
-                                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-0.5">A.B.N.</div>
-                                    <div className="text-base font-black text-[#1a1a2e] tracking-widest">
+                                    <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest mb-1">A.B.N.</div>
+                                    <div className="text-lg font-black text-[#1a1a2e] tracking-wider mb-3">
                                         {viewInvoice.business?.taxNumber || viewInvoice.business?.abn || '31647801045'}
+                                    </div>
+                                    <div className="flex items-center justify-end gap-1.5 text-xs text-slate-600">
+                                        <svg className="w-3 h-3 text-[#1c2a5e] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 015.33 12a19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 8.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                                        {viewInvoice.business?.phone || '61475902921'}
                                     </div>
                                 </div>
                             </div>
@@ -815,40 +959,115 @@ const Invoices = () => {
                                 ))}
                             </div>
 
-                            {/* Items Table */}
-                            <div className="rounded-xl overflow-hidden border border-slate-200">
-                                <table className="w-full text-xs">
-                                    <thead>
-                                        <tr className="bg-[#1c2a5e] text-white">
-                                            <th className="px-3 py-2.5 text-left font-semibold tracking-wide">Delivery Date</th>
-                                            <th className="px-3 py-2.5 text-left font-semibold tracking-wide">Item Name</th>
-                                            <th className="px-3 py-2.5 text-right font-semibold tracking-wide">Qty</th>
-                                            <th className="px-3 py-2.5 text-right font-semibold tracking-wide">Rate</th>
-                                            <th className="px-3 py-2.5 text-right font-semibold tracking-wide">Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {(viewInvoice.order?.items || []).length === 0 ? (
-                                            <tr>
-                                                <td colSpan={5} className="px-3 py-6 text-center text-slate-400">No items</td>
-                                            </tr>
-                                        ) : (viewInvoice.order?.items || []).map((item: any, i: number, arr: any[]) => {
-                                            const prev = i > 0 ? arr[i - 1] : null;
-                                            const delivDate = item.deliveryDate || item.shipDate || '';
-                                            const prevDelivDate = prev ? (prev.deliveryDate || prev.shipDate || '') : null;
-                                            const showDate = !prevDelivDate || prevDelivDate !== delivDate;
-                                            return (
-                                                <tr key={i} className={`border-t border-slate-100 ${i % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'} hover:bg-cyan-50/30 transition-colors`}>
-                                                    <td className="px-3 py-2 font-semibold text-[#1a1a2e]">{showDate && delivDate ? delivDate : (delivDate ? '•••' : '')}</td>
-                                                    <td className="px-3 py-2 text-slate-800">{item.serviceName || item.name}</td>
-                                                    <td className="px-3 py-2 text-right text-slate-700">{item.quantity}</td>
-                                                    <td className="px-3 py-2 text-right text-slate-700">{currency}{Number(item.pricePerUnit || item.rate || 0).toFixed(2)}</td>
-                                                    <td className="px-3 py-2 text-right font-semibold text-[#1a1a2e]">{currency}{Number(item.subtotal || item.total || 0).toFixed(2)}</td>
+                            {/* Unified Invoice Table with 3 Sections */}
+                            <div className="rounded-lg overflow-hidden border border-slate-200">
+                                {(() => {
+                                    const allItems = [...(viewInvoice.order?.items || [])];
+                                    const services = allItems.filter(item => !item.isRefunded && item.serviceType !== 'manual' && item.service);
+                                    const manualItems = allItems.filter(item => !item.isRefunded && (item.serviceType === 'manual' || !item.service));
+                                    const refundedItems = allItems.filter(item => item.isRefunded);
+                                    
+                                    const formatDate = (dateStr: string) => {
+                                        if (!dateStr) return '—';
+                                        return new Date(dateStr).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+                                    };
+                                    
+                                    const deliveryDate = viewInvoice.order?.deliveryDate;
+                                    const formattedDate = formatDate(deliveryDate);
+                                    
+                                    return (
+                                        <table className="w-full text-xs">
+                                            {/* Table Header */}
+                                            <thead>
+                                                <tr className="bg-[#1c2a5e] text-white">
+                                                    <th className="text-left py-2 px-3 font-semibold">Delivery Date</th>
+                                                    <th className="text-left py-2 px-3 font-semibold">Item Name</th>
+                                                    <th className="text-center py-2 px-3 font-semibold">Qty</th>
+                                                    <th className="text-right py-2 px-3 font-semibold">Rate</th>
+                                                    <th className="text-right py-2 px-3 font-semibold">Total</th>
                                                 </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
+                                            </thead>
+                                            
+                                            <tbody>
+                                                {/* SECTION 1: SERVICES - BILLABLE */}
+                                                {services.length > 0 && (
+                                                    <>
+                                                        <tr className="bg-slate-100">
+                                                            <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
+                                                                🔧 Services - Billable
+                                                            </td>
+                                                        </tr>
+                                                        {services.map((item, i) => (
+                                                            <tr key={`service-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
+                                                                <td className="py-2 px-3 text-slate-700">
+                                                                    {i === 0 ? formattedDate : '—'}
+                                                                </td>
+                                                                <td className="py-2 px-3 text-slate-900 font-medium">{item.serviceName || item.itemName}</td>
+                                                                <td className="text-center py-2 px-3 text-slate-900">{item.quantity}</td>
+                                                                <td className="text-right py-2 px-3 text-slate-900">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                                                <td className="text-right py-2 px-3 text-slate-900 font-semibold">{currency}{Number(item.subtotal || 0).toFixed(2)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </>
+                                                )}
+                                                
+                                                {/* SECTION 2: ITEMS - TRACKING ONLY (NOT BILLED) */}
+                                                {manualItems.length > 0 && (
+                                                    <>
+                                                        <tr className="bg-slate-100">
+                                                            <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
+                                                                📦 Items - Tracking Only (Not Billed)
+                                                            </td>
+                                                        </tr>
+                                                        {manualItems.map((item, i) => (
+                                                            <tr key={`manual-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
+                                                                <td className="py-2 px-3 text-slate-700">
+                                                                    {i === 0 ? formattedDate : '—'}
+                                                                </td>
+                                                                <td className="py-2 px-3 text-slate-900 font-medium">{item.itemName || item.serviceName}</td>
+                                                                <td className="text-center py-2 px-3 text-slate-900">{item.quantity}</td>
+                                                                <td className="text-right py-2 px-3 text-slate-500 line-through">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                                                <td className="text-right py-2 px-3 text-slate-500 font-semibold">Not Billed</td>
+                                                            </tr>
+                                                        ))}
+                                                        <tr className="bg-slate-50 border-b border-slate-200">
+                                                            <td colSpan={5} className="py-2 px-3 text-center text-xs text-slate-600">
+                                                                ℹ️ These items are tracked for damage reference only and NOT included in billing
+                                                            </td>
+                                                        </tr>
+                                                    </>
+                                                )}
+                                                
+                                                {/* SECTION 3: REFUNDED ITEMS */}
+                                                {refundedItems.length > 0 && (
+                                                    <>
+                                                        <tr className="bg-slate-100">
+                                                            <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
+                                                                🔄 Refunded Items
+                                                            </td>
+                                                        </tr>
+                                                        {refundedItems.map((item, i) => (
+                                                            <tr key={`refund-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
+                                                                <td className="py-2 px-3 text-slate-700">
+                                                                    {i === 0 ? formattedDate : '—'}
+                                                                </td>
+                                                                <td className="py-2 px-3">
+                                                                    <div className="text-slate-900 font-medium">{item.serviceName || item.itemName}</div>
+                                                                    {item.refundReason && (
+                                                                        <div className="text-red-600 text-xs mt-0.5">Reason: {item.refundReason}</div>
+                                                                    )}
+                                                                </td>
+                                                                <td className="text-center py-2 px-3 text-slate-900">{item.damagedQuantity || item.quantity}</td>
+                                                                <td className="text-right py-2 px-3 text-slate-900">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                                                <td className="text-right py-2 px-3 text-red-700 font-semibold">-{currency}{Number(item.refundAmount || item.subtotal || 0).toFixed(2)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    );
+                                })()}
                             </div>
 
                             {/* Credited Items */}
@@ -903,9 +1122,9 @@ const Invoices = () => {
                                             <span className="text-emerald-600 font-semibold">{currency}{Number(viewInvoice.paidAmount || 0).toFixed(2)}</span>
                                         </div>
                                         <div className="flex justify-between gap-12 text-slate-500 text-[11px] px-1">
-                                            <span>Balance Due</span>
+                                            <span>{(viewInvoice.balanceDue || 0) < 0 ? 'Refund Due to Customer' : 'Balance Due'}</span>
                                             <span className={`font-bold ${(viewInvoice.balanceDue || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                {currency}{Number(viewInvoice.balanceDue || 0).toFixed(2)}
+                                                {(viewInvoice.balanceDue || 0) < 0 ? '-' : ''}{currency}{Math.abs(Number(viewInvoice.balanceDue || 0)).toFixed(2)}
                                             </span>
                                         </div>
                                     </div>

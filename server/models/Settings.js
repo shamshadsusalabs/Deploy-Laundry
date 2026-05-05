@@ -19,6 +19,22 @@ const settingsSchema = new mongoose.Schema(
         invoiceFooter: { type: String, default: 'Thank you for choosing CleanWave Laundry!' },
         workingHours: { type: String, default: '08:00 AM - 08:00 PM' },
         workingDays: { type: String, default: 'Mon - Sat' },
+        
+        // NEW FIELDS for service duration thresholds
+        serviceDurationThresholds: {
+            type: Map,
+            of: Number, // hours
+            default: {
+                'Wash & Fold': 24,
+                'Dry Cleaning': 48,
+                'Ironing': 12,
+                'Wash & Iron': 24,
+            },
+        },
+        refundRecommendationEnabled: {
+            type: Boolean,
+            default: true,
+        },
     },
     { timestamps: true }
 );

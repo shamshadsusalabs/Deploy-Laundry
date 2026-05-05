@@ -8,9 +8,10 @@ import {
     HiOutlineSearch,
     HiOutlinePlusCircle,
     HiOutlineTrash,
-
+    HiOutlineUpload,
 } from 'react-icons/hi';
 import { HiMinus, HiPlus } from 'react-icons/hi2';
+import BulkOrderImport from '../components/order/BulkOrderImport';
 
 const serviceTypeLabels: Record<string, string> = {
     'wash-fold': '🧺 Wash & Fold',
@@ -32,14 +33,23 @@ const CreateOrder = () => {
     const [customerSearch, setCustomerSearch] = useState('');
     const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
     const [items, setItems] = useState<IOrderItem[]>([]);
+    const [manualItems, setManualItems] = useState<Array<{
+        itemType: string;
+        itemName: string;
+        quantity: number;
+        pricePerUnit: number;
+        subtotal: number;
+    }>>([]);
     const [specialInstructions, setSpecialInstructions] = useState('');
     const [deliveryDate, setDeliveryDate] = useState('');
     const taxPercent = 5;
     const [discountPercent, setDiscountPercent] = useState(0);
+    const [applyCreditBalance, setApplyCreditBalance] = useState(false);
 
     // Quick-add customer modal
     const [showAddCustomer, setShowAddCustomer] = useState(false);
     const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', customerType: 'walk-in' });
+    const [showBulkImport, setShowBulkImport] = useState(false);
 
     useEffect(() => {
         const fetchServices = async () => {
@@ -86,6 +96,8 @@ const CreateOrder = () => {
                 service: service._id,
                 serviceName: service.name,
                 serviceType: service.serviceType,
+                itemType: 'Clothing', // Default item type
+                itemName: service.name, // Default item name
                 quantity: 1,
                 unit: service.unit,
                 pricePerUnit: service.pricePerUnit,
@@ -102,8 +114,41 @@ const CreateOrder = () => {
         }));
     };
 
+    const updateItemType = (index: number, itemType: string) => {
+        setItems(items.map((item, i) => i === index ? { ...item, itemType: itemType as any } : item));
+    };
+
+    const updateItemName = (index: number, itemName: string) => {
+        setItems(items.map((item, i) => i === index ? { ...item, itemName } : item));
+    };
+
     const removeItem = (index: number) => {
         setItems(items.filter((_, i) => i !== index));
+    };
+
+    const addManualItem = () => {
+        setManualItems([...manualItems, {
+            itemType: 'Clothing',
+            itemName: '',
+            quantity: 1,
+            pricePerUnit: 0,
+            subtotal: 0,
+        }]);
+    };
+
+    const updateManualItem = (index: number, field: string, value: any) => {
+        setManualItems(manualItems.map((item, i) => {
+            if (i !== index) return item;
+            const updated = { ...item, [field]: value };
+            if (field === 'quantity' || field === 'pricePerUnit') {
+                updated.subtotal = updated.quantity * updated.pricePerUnit;
+            }
+            return updated;
+        }));
+    };
+
+    const removeManualItem = (index: number) => {
+        setManualItems(manualItems.filter((_, i) => i !== index));
     };
 
     const subtotal = items.reduce((sum, i) => sum + i.subtotal, 0);
@@ -126,17 +171,37 @@ const CreateOrder = () => {
 
     const handleSubmit = async () => {
         if (!selectedCustomer) { toast.error('Please select a customer'); return; }
-        if (items.length === 0) { toast.error('Please add at least one item'); return; }
+        if (items.length === 0 && manualItems.length === 0) { 
+            toast.error('Please add at least one service or item'); 
+            return; 
+        }
 
         setLoading(true);
         try {
+            // Combine service items and manual items
+            const allItems = [
+                ...items,
+                ...manualItems.map(mi => ({
+                    service: null, // Manual items don't have service reference
+                    serviceName: mi.itemName,
+                    serviceType: 'manual',
+                    itemType: mi.itemType as any,
+                    itemName: mi.itemName,
+                    quantity: mi.quantity,
+                    unit: 'piece',
+                    pricePerUnit: mi.pricePerUnit,
+                    subtotal: mi.subtotal,
+                }))
+            ];
+
             await api.post('/orders', {
                 customer: selectedCustomer._id,
-                items,
+                items: allItems,
                 specialInstructions,
                 deliveryDate: deliveryDate || undefined,
                 taxPercent,
                 discountPercent,
+                applyCreditBalance,
             });
             toast.success('Order created successfully!');
             navigate('/orders');
@@ -149,7 +214,16 @@ const CreateOrder = () => {
 
     return (
         <div className="space-y-6 animate-fadeIn">
-            <h1 className="text-2xl font-bold text-slate-900">Create New Order</h1>
+            <div className="flex items-center justify-between">
+                <h1 className="text-2xl font-bold text-slate-900">Create New Order</h1>
+                <button
+                    onClick={() => setShowBulkImport(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors text-sm font-medium"
+                >
+                    <HiOutlineUpload className="w-4 h-4" />
+                    Bulk Import CSV
+                </button>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left — Form */}
@@ -219,6 +293,97 @@ const CreateOrder = () => {
                         </div>
                     </div>
 
+                    {/* Manual Items Section */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-base font-semibold text-slate-900">Add Items (Bedsheet, Towel, etc.)</h2>
+                            <button
+                                onClick={addManualItem}
+                                className="flex items-center gap-2 px-3 py-2 text-sm bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors"
+                            >
+                                <HiOutlinePlusCircle className="w-4 h-4" />
+                                Add Item
+                            </button>
+                        </div>
+
+                        {manualItems.length === 0 ? (
+                            <p className="text-sm text-slate-500 text-center py-4">No items added. Click "Add Item" to add bedsheet, towel, etc.</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {manualItems.map((item, i) => (
+                                    <div key={i} className="p-4 rounded-xl border border-slate-200 bg-slate-50">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                                            <div>
+                                                <label className="block text-xs text-slate-600 mb-1">Item Type</label>
+                                                <select
+                                                    value={item.itemType}
+                                                    onChange={(e) => updateManualItem(i, 'itemType', e.target.value)}
+                                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                >
+                                                    <option value="Clothing">👕 Clothing</option>
+                                                    <option value="Linen">🛏️ Linen</option>
+                                                    <option value="Accessories">👜 Accessories</option>
+                                                    <option value="Special_Items">⭐ Special Items</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-slate-600 mb-1">Item Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={item.itemName}
+                                                    onChange={(e) => updateManualItem(i, 'itemName', e.target.value)}
+                                                    placeholder="e.g., Bedsheet, Towel, Shirt"
+                                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <div>
+                                                <label className="block text-xs text-slate-600 mb-1">Quantity</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    value={item.quantity}
+                                                    onChange={(e) => updateManualItem(i, 'quantity', Number(e.target.value))}
+                                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-slate-600 mb-1">Price per Item</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={item.pricePerUnit}
+                                                    onChange={(e) => updateManualItem(i, 'pricePerUnit', Number(e.target.value))}
+                                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-slate-600 mb-1">Subtotal</label>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={`${currency}${item.subtotal}`}
+                                                        readOnly
+                                                        className="flex-1 px-3 py-2 text-sm bg-slate-100 border border-slate-200 rounded-lg text-slate-900 font-medium"
+                                                    />
+                                                    <button
+                                                        onClick={() => removeManualItem(i)}
+                                                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    >
+                                                        <HiOutlineTrash className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                     {/* Special Instructions */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-5">
                         <h2 className="text-base font-semibold text-slate-900 mb-3">Details</h2>
@@ -248,38 +413,136 @@ const CreateOrder = () => {
                     <div className="sticky top-20 rounded-2xl border border-slate-200 bg-white p-5">
                         <h2 className="text-base font-semibold text-slate-900 mb-4">Order Summary</h2>
 
-                        {items.length === 0 ? (
+                        {items.length === 0 && manualItems.length === 0 ? (
                             <p className="text-sm text-slate-500 text-center py-8">No items added yet</p>
                         ) : (
-                            <div className="space-y-3 mb-5">
-                                {items.map((item, i) => (
-                                    <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm text-slate-900 font-medium truncate">{item.serviceName}</p>
-                                            <p className="text-xs text-slate-500">{currency}{item.pricePerUnit}/{item.unit}</p>
+                            <div className="space-y-4 mb-5">
+                                {/* Service Items */}
+                                {items.length > 0 && (
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                                            <span className="w-2 h-2 bg-cyan-500 rounded-full"></span>
+                                            Services
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {items.map((item, i) => (
+                                                <div key={i} className="p-3 rounded-xl border border-slate-200 bg-white space-y-2">
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm text-slate-900 font-medium truncate">{item.serviceName}</p>
+                                                            <p className="text-xs text-slate-500">{currency}{item.pricePerUnit}/{item.unit}</p>
+                                                        </div>
+                                                        <button onClick={() => removeItem(i)} className="text-red-400 hover:text-red-300 mt-1">
+                                                            <HiOutlineTrash className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <button onClick={() => updateQty(i, -1)}
+                                                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:border-slate-300">
+                                                                <HiMinus className="w-3 h-3" />
+                                                            </button>
+                                                            <span className="text-sm text-slate-900 w-8 text-center font-medium">{item.quantity}</span>
+                                                            <button onClick={() => updateQty(i, 1)}
+                                                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:border-slate-300">
+                                                                <HiPlus className="w-3 h-3" />
+                                                            </button>
+                                                            <span className="text-xs text-slate-500 ml-1">× {currency}{item.pricePerUnit}</span>
+                                                        </div>
+                                                        <span className="text-base text-slate-900 font-bold">{currency}{item.subtotal}</span>
+                                                    </div>
+                                                    
+                                                    {/* Item Type and Name */}
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className="block text-xs text-slate-500 mb-1">Item Type</label>
+                                                            <select
+                                                                value={item.itemType || 'Clothing'}
+                                                                onChange={(e) => updateItemType(i, e.target.value)}
+                                                                className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                            >
+                                                                <option value="Clothing">👕 Clothing</option>
+                                                                <option value="Linen">🛏️ Linen</option>
+                                                                <option value="Accessories">👜 Accessories</option>
+                                                                <option value="Special_Items">⭐ Special Items</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs text-slate-500 mb-1">Item Name</label>
+                                                            <input
+                                                                type="text"
+                                                                value={item.itemName || ''}
+                                                                onChange={(e) => updateItemName(i, e.target.value)}
+                                                                placeholder="e.g., Shirt, Towel"
+                                                                className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <button onClick={() => updateQty(i, -1)}
-                                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:border-white/20">
-                                                <HiMinus className="w-3 h-3" />
-                                            </button>
-                                            <span className="text-sm text-slate-900 w-6 text-center">{item.quantity}</span>
-                                            <button onClick={() => updateQty(i, 1)}
-                                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:border-white/20">
-                                                <HiPlus className="w-3 h-3" />
-                                            </button>
-                                        </div>
-                                        <span className="text-sm text-slate-900 font-medium w-16 text-right">{currency}{item.subtotal}</span>
-                                        <button onClick={() => removeItem(i)} className="text-red-400 hover:text-red-300">
-                                            <HiOutlineTrash className="w-4 h-4" />
-                                        </button>
                                     </div>
-                                ))}
+                                )}
+
+                                {/* Manual Items */}
+                                {manualItems.length > 0 && (
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                                            <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                                            Items
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {manualItems.map((item, i) => (
+                                                <div key={i} className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className="text-xs px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded font-medium">
+                                                                    {item.itemType.replace('_', ' ')}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-sm text-slate-900 font-medium">
+                                                                {item.itemName || 'Unnamed Item'}
+                                                            </p>
+                                                            <p className="text-xs text-slate-600">
+                                                                {item.quantity} × {currency}{item.pricePerUnit} = {currency}{item.subtotal}
+                                                            </p>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => removeManualItem(i)} 
+                                                            className="text-red-400 hover:text-red-600 p-1"
+                                                        >
+                                                            <HiOutlineTrash className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
                         {/* Totals */}
                         <div className="border-t border-slate-200 pt-4 space-y-2">
+                            {/* Credit Balance Option */}
+                            {selectedCustomer && selectedCustomer.creditBalance && selectedCustomer.creditBalance > 0 && (
+                                <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={applyCreditBalance}
+                                            onChange={(e) => setApplyCreditBalance(e.target.checked)}
+                                            className="w-4 h-4 text-cyan-500 rounded focus:ring-cyan-500"
+                                        />
+                                        <span className="text-sm text-slate-700">
+                                            Apply credit balance: <span className="font-semibold text-emerald-600">{currency}{selectedCustomer.creditBalance.toLocaleString()}</span>
+                                        </span>
+                                    </label>
+                                </div>
+                            )}
+                            
                             <div className="flex justify-between text-sm">
                                 <span className="text-slate-500">Subtotal</span>
                                 <span className="text-slate-900">{currency}{subtotal.toLocaleString()}</span>
@@ -302,7 +565,7 @@ const CreateOrder = () => {
 
                         <button
                             onClick={handleSubmit}
-                            disabled={loading || !selectedCustomer || items.length === 0}
+                            disabled={loading || !selectedCustomer || (items.length === 0 && manualItems.length === 0)}
                             className="w-full mt-5 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold rounded-xl hover:from-cyan-400 hover:to-blue-500 transition-all shadow-lg shadow-md shadow-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading ? 'Creating...' : 'Create Order'}
@@ -330,6 +593,17 @@ const CreateOrder = () => {
                         </form>
                     </div>
                 </div>
+            )}
+
+            {/* Bulk Import Modal */}
+            {showBulkImport && (
+                <BulkOrderImport
+                    onClose={() => setShowBulkImport(false)}
+                    onSuccess={() => {
+                        // Optionally navigate to orders page or refresh
+                        navigate('/orders');
+                    }}
+                />
             )}
         </div>
     );

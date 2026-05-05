@@ -12,6 +12,7 @@ import {
     HiOutlineCog,
     HiOutlineLogout,
     HiOutlineX,
+    HiOutlineReceiptRefund,
 } from 'react-icons/hi';
 
 import { HiOutlineCube, HiOutlineTruck } from 'react-icons/hi2';
@@ -72,6 +73,12 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
             label: 'Reports',
             icon: HiOutlineChartBar,
             path: '/reports',
+            roles: ['admin', 'manager'],
+        },
+        {
+            label: 'Refund Analytics',
+            icon: HiOutlineReceiptRefund,
+            path: '/refunds/analytics',
             roles: ['admin', 'manager'],
         },
         {

@@ -10,9 +10,10 @@ const {
 } = require('../controllers/settingsController');
 const { protect, authorize } = require('../middleware/auth');
 
+router.get('/', getSettings);
+
 router.use(protect);
 
-router.get('/', getSettings);
 router.put('/', authorize('admin'), updateSettings);
 router.get('/services', authorize('admin'), getServices);
 router.post('/services', authorize('admin'), createService);

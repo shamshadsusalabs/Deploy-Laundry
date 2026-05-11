@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, StatusBar } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
+import { useSettings } from '../context/SettingsContext';
 
 const psColors: Record<string, { bg: string; text: string; icon: string }> = {
     paid: { bg: '#14532d', text: '#4ade80', icon: '✅' },
@@ -10,6 +11,7 @@ const psColors: Record<string, { bg: string; text: string; icon: string }> = {
 };
 
 export default function InvoicesScreen({ navigation }: any) {
+    const { currency } = useSettings();
     const [invoices, setInvoices] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -59,7 +61,7 @@ export default function InvoicesScreen({ navigation }: any) {
                     <View>
                         <Text style={{ color: '#64748b', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Total Balance</Text>
                         <Text style={{ color: '#f1f5f9', fontSize: 24, fontWeight: '800', marginTop: 4 }}>
-                            ${invoices.reduce((sum, i) => sum + (i.balanceDue || 0), 0)}
+                            {currency}{invoices.reduce((sum, i) => sum + (i.balanceDue || 0), 0)}
                         </Text>
                     </View>
                     <View style={{ backgroundColor: 'rgba(6, 182, 212, 0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
@@ -134,13 +136,13 @@ export default function InvoicesScreen({ navigation }: any) {
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 14, borderTopWidth: 1, borderTopColor: isUnpaid ? 'rgba(239, 68, 68, 0.1)' : '#334155' }}>
                                 <View>
                                     <Text style={{ color: '#64748b', fontSize: 11, fontWeight: '600' }}>Total Amount</Text>
-                                    <Text style={{ color: '#f1f5f9', fontWeight: '800', fontSize: 20, marginTop: 2 }}>${item.totalAmount}</Text>
+                                    <Text style={{ color: '#f1f5f9', fontWeight: '800', fontSize: 20, marginTop: 2 }}>{currency}{item.totalAmount}</Text>
                                 </View>
                                 <View style={{ alignItems: 'flex-end' }}>
                                     {item.balanceDue > 0 ? (
                                         <>
                                             <Text style={{ color: '#ef4444', fontSize: 11, fontWeight: '700' }}>BALANCE DUE</Text>
-                                            <Text style={{ color: '#ef4444', fontSize: 18, fontWeight: '800', marginTop: 2 }}>${item.balanceDue}</Text>
+                                            <Text style={{ color: '#ef4444', fontSize: 18, fontWeight: '800', marginTop: 2 }}>{currency}{item.balanceDue}</Text>
                                         </>
                                     ) : (
                                         <Text style={{ color: '#4ade80', fontSize: 12, fontWeight: '700' }}>FULLY PAID</Text>

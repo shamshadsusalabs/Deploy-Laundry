@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
+import { useSettings } from '../context/SettingsContext';
 
 const statusColors: Record<string, { bg: string; text: string; icon: string }> = {
     received: { bg: '#1e3a5f', text: '#60a5fa', icon: '📥' },
@@ -23,10 +24,10 @@ const statusFilters = [
     { label: 'All', value: '' },
     { label: 'Active', value: 'active' },
     { label: 'Delivered', value: 'delivered' },
-    { label: 'Cancelled', value: 'cancelled' },
 ];
 
 export default function OrdersScreen({ navigation }: any) {
+    const { currency } = useSettings();
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -95,7 +96,7 @@ export default function OrdersScreen({ navigation }: any) {
                             {itemCount} item{itemCount !== 1 ? 's' : ''}
                         </Text>
                     </View>
-                    <Text style={{ color: '#f1f5f9', fontWeight: '800', fontSize: 18 }}>${item.totalAmount}</Text>
+                    <Text style={{ color: '#f1f5f9', fontWeight: '800', fontSize: 18 }}>{currency}{item.totalAmount}</Text>
                 </View>
 
                 {item.deliveryDate && (

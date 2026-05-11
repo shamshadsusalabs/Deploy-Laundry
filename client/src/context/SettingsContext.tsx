@@ -11,7 +11,7 @@ const SettingsContext = createContext<SettingsContextType | undefined>(undefined
 
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     const [settings, setSettings] = useState<any>({});
-    const [currency, setCurrency] = useState('₹');
+    const [currency, setCurrency] = useState('AUD$');
 
     const fetchSettings = useCallback(async () => {
         try {
@@ -22,7 +22,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
                 setCurrency(data.currency);
             }
         } catch {
-            // fallback to ₹
+            // fallback to AUD$
         }
     }, []);
 

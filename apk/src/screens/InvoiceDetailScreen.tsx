@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StatusBar } from 'react-native';
 import api from '../services/api';
+import { useSettings } from '../context/SettingsContext';
 
 export default function InvoiceDetailScreen({ route, navigation }: any) {
     const { invoiceId } = route.params;
+    const { currency } = useSettings();
     const [invoice, setInvoice] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
@@ -97,24 +99,24 @@ export default function InvoiceDetailScreen({ route, navigation }: any) {
 
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                         <Text style={{ color: '#64748b', fontSize: 14 }}>Subtotal</Text>
-                        <Text style={{ color: '#94a3b8', fontSize: 14 }}>${invoice.subtotal}</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{invoice.subtotal}</Text>
                     </View>
                     {invoice.taxAmount > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#64748b', fontSize: 14 }}>Tax</Text>
-                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>${invoice.taxAmount}</Text>
+                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{invoice.taxAmount}</Text>
                         </View>
                     )}
                     {invoice.discountAmount > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#4ade80', fontSize: 14 }}>Discount</Text>
-                            <Text style={{ color: '#4ade80', fontSize: 14 }}>-${invoice.discountAmount}</Text>
+                            <Text style={{ color: '#4ade80', fontSize: 14 }}>-{currency}{invoice.discountAmount}</Text>
                         </View>
                     )}
                     {invoice.serviceCharge > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#64748b', fontSize: 14 }}>Service Charge</Text>
-                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>${invoice.serviceCharge}</Text>
+                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{invoice.serviceCharge}</Text>
                         </View>
                     )}
 
@@ -129,12 +131,12 @@ export default function InvoiceDetailScreen({ route, navigation }: any) {
                         }}
                     >
                         <Text style={{ color: '#f1f5f9', fontSize: 18, fontWeight: '800' }}>Total</Text>
-                        <Text style={{ color: '#06b6d4', fontSize: 18, fontWeight: '800' }}>${invoice.totalAmount}</Text>
+                        <Text style={{ color: '#06b6d4', fontSize: 18, fontWeight: '800' }}>{currency}{invoice.totalAmount}</Text>
                     </View>
 
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                         <Text style={{ color: '#64748b', fontSize: 14 }}>Paid</Text>
-                        <Text style={{ color: '#4ade80', fontSize: 14, fontWeight: '600' }}>${invoice.paidAmount}</Text>
+                        <Text style={{ color: '#4ade80', fontSize: 14, fontWeight: '600' }}>{currency}{invoice.paidAmount}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                         <Text style={{ color: '#f1f5f9', fontSize: 14, fontWeight: '700' }}>Balance Due</Text>
@@ -145,7 +147,7 @@ export default function InvoiceDetailScreen({ route, navigation }: any) {
                                 color: invoice.balanceDue > 0 ? '#fca5a5' : '#4ade80',
                             }}
                         >
-                            ${invoice.balanceDue}
+                            {currency}{invoice.balanceDue}
                         </Text>
                     </View>
                 </View>
@@ -191,7 +193,7 @@ export default function InvoiceDetailScreen({ route, navigation }: any) {
                                         {new Date(p.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                     </Text>
                                 </View>
-                                <Text style={{ color: '#4ade80', fontSize: 15, fontWeight: '700' }}>+${p.amount}</Text>
+                                <Text style={{ color: '#4ade80', fontSize: 15, fontWeight: '700' }}>+{currency}{p.amount}</Text>
                             </View>
                         ))
                     )}

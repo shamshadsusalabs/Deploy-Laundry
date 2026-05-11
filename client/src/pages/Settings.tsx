@@ -157,8 +157,8 @@ const Settings = () => {
                         </div>
                         <div>
                             <label className="block text-xs text-slate-500 mb-1">Currency</label>
-                            <select value={settings.currency || '₹'} onChange={(e) => setSettings({ ...settings, currency: e.target.value })} className={inputClass}>
-                                <option value="₹">₹ — Indian Rupee (INR)</option>
+                            <select value={settings.currency || 'AUD$'} onChange={(e) => setSettings({ ...settings, currency: e.target.value })} className={inputClass}>
+                                <option value="AUD$">AUD$ — Australian Dollar (AUD)</option>
                                 <option value="$">$ — US Dollar (USD)</option>
                                 <option value="€">€ — Euro (EUR)</option>
                                 <option value="£">£ — British Pound (GBP)</option>
@@ -172,7 +172,7 @@ const Settings = () => {
                                 <option value="ر.ع">ر.ع — Omani Rial (OMR)</option>
                                 <option value="ر.ق">ر.ق — Qatari Riyal (QAR)</option>
                                 <option value="C$">C$ — Canadian Dollar (CAD)</option>
-                                <option value="A$">A$ — Australian Dollar (AUD)</option>
+                                <option value="AUD$">AUD$ — Australian Dollar (AUD)</option>
                                 <option value="NZ$">NZ$ — New Zealand Dollar (NZD)</option>
                                 <option value="S$">S$ — Singapore Dollar (SGD)</option>
                                 <option value="HK$">HK$ — Hong Kong Dollar (HKD)</option>

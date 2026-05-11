@@ -12,6 +12,7 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import api from '../services/api';
 
 interface Summary {
@@ -33,6 +34,7 @@ const statusColors: Record<string, { bg: string; text: string; icon: string }> =
 
 export default function HomeScreen({ navigation }: any) {
     const { customer } = useAuth();
+    const { currency } = useSettings();
     const [summary, setSummary] = useState<Summary | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -83,27 +85,9 @@ export default function HomeScreen({ navigation }: any) {
                     style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 60 }}
                 >
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <View
-                            style={{
-                                width: 140,
-                                height: 50,
-                                borderRadius: 10,
-                                backgroundColor: '#ffffff',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                overflow: 'hidden',
-                                shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 4 },
-                                shadowOpacity: 0.1,
-                                shadowRadius: 10,
-                                elevation: 5,
-                            }}
-                        >
-                            <Image
-                                source={require('../../public/logo.png')}
-                                style={{ width: 120, height: 40 }}
-                                resizeMode="contain"
-                            />
+                        <View>
+                            <Text style={{ color: '#ffffff', fontSize: 22, fontWeight: '800' }}>Peninsula</Text>
+                            <Text style={{ color: '#06b6d4', fontSize: 22, fontWeight: '800' }}>Laundries</Text>
                         </View>
                         <TouchableOpacity 
                             onPress={() => navigation.navigate('Profile')}
@@ -284,10 +268,9 @@ export default function HomeScreen({ navigation }: any) {
                                     OUTSTANDING BALANCE
                                 </Text>
                                 <Text style={{ color: '#fcd34d', fontSize: 24, fontWeight: '800', marginTop: 4 }}>
-                                    ${summary?.unpaidBalance?.toFixed(2)}
+                                    {currency}{summary?.unpaidBalance?.toFixed(2)}
                                 </Text>
                             </View>
-                            <Text style={{ fontSize: 32 }}>⚠️</Text>
                         </View>
                     )}
 
@@ -358,7 +341,7 @@ export default function HomeScreen({ navigation }: any) {
                                                     </Text>
                                                 </View>
                                                 <Text style={{ color: '#f1f5f9', fontWeight: '800', fontSize: 15, marginTop: 6 }}>
-                                                    ₹{order.totalAmount}
+                                                    {currency}{order.totalAmount}
                                                 </Text>
                                             </View>
                                         </View>

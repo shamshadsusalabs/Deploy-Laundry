@@ -135,29 +135,6 @@ export default function RegisterScreen({ navigation }: any) {
 
                         {/* Header */}
                         <View style={{ alignItems: 'center', marginBottom: 28 }}>
-                            <View
-                                style={{
-                                    width: 220,
-                                    height: 80,
-                                    borderRadius: 16,
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    marginBottom: 16,
-                                    backgroundColor: '#ffffff',
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 4 },
-                                    shadowOpacity: 0.15,
-                                    shadowRadius: 10,
-                                    elevation: 5,
-                                    overflow: 'hidden',
-                                }}
-                            >
-                                <Image
-                                    source={require('../../public/logo.png')}
-                                    style={{ width: 200, height: 65 }}
-                                    resizeMode="contain"
-                                />
-                            </View>
                             <Text style={{ fontSize: isTablet ? 28 : 22, fontWeight: '800', color: '#ffffff' }}>
                                 Peninsula Laundries
                             </Text>

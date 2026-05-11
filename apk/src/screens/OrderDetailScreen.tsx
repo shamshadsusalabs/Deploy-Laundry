@@ -8,6 +8,7 @@ import {
     StatusBar,
 } from 'react-native';
 import api from '../services/api';
+import { useSettings } from '../context/SettingsContext';
 
 const statusColors: Record<string, { bg: string; text: string; icon: string }> = {
     received: { bg: '#1e3a5f', text: '#60a5fa', icon: '📥' },
@@ -21,6 +22,7 @@ const statusOrder = ['received', 'washing', 'packed', 'delivered'];
 
 export default function OrderDetailScreen({ route, navigation }: any) {
     const { orderId } = route.params;
+    const { currency } = useSettings();
     const [order, setOrder] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
@@ -206,7 +208,7 @@ export default function OrderDetailScreen({ route, navigation }: any) {
                                     {item.serviceType?.replace('-', ' ')} • {item.quantity} {item.unit}
                                 </Text>
                             </View>
-                            <Text style={{ color: '#f1f5f9', fontSize: 14, fontWeight: '700' }}>${item.subtotal}</Text>
+                            <Text style={{ color: '#f1f5f9', fontSize: 14, fontWeight: '700' }}>{currency}{item.subtotal}</Text>
                         </View>
                     ))}
                 </View>
@@ -229,24 +231,24 @@ export default function OrderDetailScreen({ route, navigation }: any) {
 
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                         <Text style={{ color: '#64748b', fontSize: 14 }}>Subtotal</Text>
-                        <Text style={{ color: '#94a3b8', fontSize: 14 }}>${order.subtotal}</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{order.subtotal}</Text>
                     </View>
                     {order.taxAmount > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#64748b', fontSize: 14 }}>Tax ({order.taxPercent}%)</Text>
-                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>${order.taxAmount}</Text>
+                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{order.taxAmount}</Text>
                         </View>
                     )}
                     {order.discountAmount > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#4ade80', fontSize: 14 }}>Discount ({order.discountPercent}%)</Text>
-                            <Text style={{ color: '#4ade80', fontSize: 14 }}>-${order.discountAmount}</Text>
+                            <Text style={{ color: '#4ade80', fontSize: 14 }}>-{currency}{order.discountAmount}</Text>
                         </View>
                     )}
                     {order.serviceCharge > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#64748b', fontSize: 14 }}>Service Charge</Text>
-                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>${order.serviceCharge}</Text>
+                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{order.serviceCharge}</Text>
                         </View>
                     )}
                     <View
@@ -260,7 +262,7 @@ export default function OrderDetailScreen({ route, navigation }: any) {
                         }}
                     >
                         <Text style={{ color: '#f1f5f9', fontSize: 18, fontWeight: '800' }}>Total</Text>
-                        <Text style={{ color: '#06b6d4', fontSize: 18, fontWeight: '800' }}>${order.totalAmount}</Text>
+                        <Text style={{ color: '#06b6d4', fontSize: 18, fontWeight: '800' }}>{currency}{order.totalAmount}</Text>
                     </View>
 
                     {/* Payment Status */}

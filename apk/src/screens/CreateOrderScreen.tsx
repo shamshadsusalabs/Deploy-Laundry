@@ -13,6 +13,7 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import LinearGradient from 'react-native-linear-gradient';
 import api from '../services/api';
+import { useSettings } from '../context/SettingsContext';
 
 const serviceTypeLabels: Record<string, { label: string; icon: string; color: string }> = {
     'wash-fold': { label: 'Wash & Fold', icon: '👕', color: '#06b6d4' },
@@ -46,6 +47,7 @@ interface ManualItem {
 }
 
 export default function CreateOrderScreen({ navigation }: any) {
+    const { currency } = useSettings();
     const [services, setServices] = useState<ServiceItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -320,7 +322,7 @@ export default function CreateOrderScreen({ navigation }: any) {
                                                     </Text>
                                                 ) : null}
                                                 <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
-                                                    ${service.pricePerUnit} / {service.unit}
+                                                    {currency}{service.pricePerUnit} / {service.unit}
                                                 </Text>
                                             </View>
 
@@ -537,7 +539,7 @@ export default function CreateOrderScreen({ navigation }: any) {
                                             justifyContent: 'center',
                                         }}>
                                             <Text style={{ color: '#f1f5f9', fontSize: 13, fontWeight: '700', textAlign: 'center' }}>
-                                                ${item.subtotal}
+                                                {currency}{item.subtotal}
                                             </Text>
                                         </View>
                                     </View>
@@ -585,7 +587,7 @@ export default function CreateOrderScreen({ navigation }: any) {
                                 </View>
                                 <Text style={{ color: '#ffffff', fontSize: 16, fontWeight: '700' }}>View Cart</Text>
                             </View>
-                            <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: '800' }}>${getCartTotal()}</Text>
+                            <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: '800' }}>{currency}{getCartTotal()}</Text>
                         </LinearGradient>
                     </TouchableOpacity>
                 </View>
@@ -629,12 +631,12 @@ export default function CreateOrderScreen({ navigation }: any) {
                                         <View style={{ flex: 1 }}>
                                             <Text style={{ color: '#f1f5f9', fontSize: 14, fontWeight: '600' }}>{item.service.name}</Text>
                                             <Text style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>
-                                                ${item.service.pricePerUnit} × {item.quantity} {item.service.unit}
+                                                {currency}{item.service.pricePerUnit} × {item.quantity} {item.service.unit}
                                             </Text>
                                         </View>
                                         <View style={{ alignItems: 'flex-end' }}>
                                             <Text style={{ color: '#f1f5f9', fontSize: 15, fontWeight: '700' }}>
-                                                ${item.service.pricePerUnit * item.quantity}
+                                                {currency}{item.service.pricePerUnit * item.quantity}
                                             </Text>
                                             <TouchableOpacity onPress={() => removeFromCart(item.serviceId)} style={{ marginTop: 4 }}>
                                                 <Text style={{ color: '#ef4444', fontSize: 11, fontWeight: '600' }}>Remove</Text>
@@ -708,7 +710,7 @@ export default function CreateOrderScreen({ navigation }: any) {
                                                 {item.itemName || 'Unnamed Item'}
                                             </Text>
                                             <Text style={{ color: '#64748b', fontSize: 11 }}>
-                                                {item.quantity} × ${item.pricePerUnit} = ${item.subtotal}
+                                                {item.quantity} × {currency}{item.pricePerUnit} = {currency}{item.subtotal}
                                             </Text>
                                         </View>
                                     ))}
@@ -787,7 +789,7 @@ export default function CreateOrderScreen({ navigation }: any) {
                                 </View>
                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#334155' }}>
                                     <Text style={{ color: '#f1f5f9', fontSize: 18, fontWeight: '800' }}>Total</Text>
-                                    <Text style={{ color: '#06b6d4', fontSize: 18, fontWeight: '800' }}>${getCartTotal()}</Text>
+                                    <Text style={{ color: '#06b6d4', fontSize: 18, fontWeight: '800' }}>{currency}{getCartTotal()}</Text>
                                 </View>
                             </View>
                         </ScrollView>

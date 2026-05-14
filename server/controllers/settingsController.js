@@ -39,7 +39,7 @@ exports.updateSettings = async (req, res, next) => {
 // @access  Private (Admin)
 exports.getServices = async (req, res, next) => {
     try {
-        const services = await Service.find().sort('serviceType name');
+        const services = await Service.find({}).sort('isCustomerSpecific serviceType name');
         res.status(200).json({ success: true, data: services });
     } catch (error) {
         next(error);
@@ -69,7 +69,13 @@ exports.updateServicePricing = async (req, res, next) => {
 // @access  Private (Admin)
 exports.createService = async (req, res, next) => {
     try {
-        const service = await Service.create(req.body);
+        const service = await Service.create({
+            ...req.body,
+            isCustomerSpecific: false,
+            customer: null,
+            customerId: '',
+            customerPhone: '',
+        });
         res.status(201).json({ success: true, data: service });
     } catch (error) {
         next(error);

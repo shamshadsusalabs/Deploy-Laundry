@@ -21,6 +21,49 @@ const serviceTypeLabels: Record<string, string> = {
     'bulk-commercial': '🏭 Bulk/Commercial',
 };
 
+type CustomServiceForm = {
+    name: string;
+    serviceType: string;
+    description: string;
+    pricePerUnit: number;
+    unit: string;
+    isExpress: boolean;
+    expressSurchargePercent: number;
+    isActive: boolean;
+};
+
+type QuickCustomerForm = {
+    name: string;
+    phone: string;
+    email: string;
+    customerType: string;
+    isPremium: boolean;
+    customServices: CustomServiceForm[];
+};
+
+const serviceTypes = ['wash-fold', 'dry-cleaning', 'ironing', 'express', 'bulk-commercial'];
+const units = ['piece', 'kg', 'bundle'];
+
+const createEmptyCustomService = (): CustomServiceForm => ({
+    name: '',
+    serviceType: 'wash-fold',
+    description: '',
+    pricePerUnit: 0,
+    unit: 'piece',
+    isExpress: false,
+    expressSurchargePercent: 50,
+    isActive: true,
+});
+
+const createEmptyQuickCustomer = (): QuickCustomerForm => ({
+    name: '',
+    phone: '',
+    email: '',
+    customerType: 'walk-in',
+    isPremium: false,
+    customServices: [],
+});
+
 const CreateOrder = () => {
     const navigate = useNavigate();
     const { currency } = useSettings();
@@ -48,18 +91,21 @@ const CreateOrder = () => {
 
     // Quick-add customer modal
     const [showAddCustomer, setShowAddCustomer] = useState(false);
-    const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', customerType: 'walk-in' });
+    const [newCustomer, setNewCustomer] = useState<QuickCustomerForm>(createEmptyQuickCustomer());
     const [showBulkImport, setShowBulkImport] = useState(false);
 
+    const fetchServices = async (customerId?: string) => {
+        try {
+            const res = await api.get('/services', {
+                params: customerId ? { customer: customerId, isActive: true } : { isActive: true },
+            });
+            setServices(res.data.data);
+        } catch {
+            toast.error('Failed to load services');
+        }
+    };
+
     useEffect(() => {
-        const fetchServices = async () => {
-            try {
-                const res = await api.get('/services');
-                setServices(res.data.data);
-            } catch {
-                toast.error('Failed to load services');
-            }
-        };
         fetchServices();
     }, []);
 
@@ -78,9 +124,13 @@ const CreateOrder = () => {
     };
 
     const selectCustomer = (c: ICustomer) => {
+        if (selectedCustomer && selectedCustomer._id !== c._id && items.length > 0) {
+            setItems([]);
+        }
         setSelectedCustomer(c);
         setCustomerSearch(c.name);
         setShowCustomerDropdown(false);
+        fetchServices(c._id);
     };
 
     const addService = (service: IService) => {
@@ -159,14 +209,54 @@ const CreateOrder = () => {
     const handleQuickAddCustomer = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await api.post('/customers', newCustomer);
-            setSelectedCustomer(res.data.data);
-            setCustomerSearch(res.data.data.name);
+            const payload = {
+                ...newCustomer,
+                customServices: newCustomer.isPremium ? newCustomer.customServices : [],
+            };
+            const res = await api.post('/customers', payload);
+            const createdCustomer = res.data.data;
+            setSelectedCustomer(createdCustomer);
+            setCustomerSearch(createdCustomer.name);
             setShowAddCustomer(false);
+            setNewCustomer(createEmptyQuickCustomer());
+            fetchServices(createdCustomer._id);
             toast.success('Customer created');
         } catch (err: any) {
             toast.error(err.response?.data?.message || 'Failed');
         }
+    };
+
+    const toggleQuickPremium = (checked: boolean) => {
+        setNewCustomer((prev) => ({
+            ...prev,
+            isPremium: checked,
+            customServices: checked && prev.customServices.length === 0
+                ? [createEmptyCustomService()]
+                : prev.customServices,
+        }));
+    };
+
+    const addQuickCustomService = () => {
+        setNewCustomer((prev) => ({
+            ...prev,
+            customServices: [...prev.customServices, createEmptyCustomService()],
+        }));
+    };
+
+    const updateQuickCustomService = (index: number, field: keyof CustomServiceForm, value: string | number | boolean) => {
+        setNewCustomer((prev) => ({
+            ...prev,
+            customServices: prev.customServices.map((service, i) => (
+                i === index ? { ...service, [field]: value } : service
+            )),
+        }));
+    };
+
+    const removeQuickCustomService = (index: number) => {
+        setNewCustomer((prev) => ({
+            ...prev,
+            customServices: prev.customServices.filter((_, i) => i !== index),
+        }));
     };
 
     const handleSubmit = async () => {
@@ -275,22 +365,38 @@ const CreateOrder = () => {
                     {/* Services */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-5">
                         <h2 className="text-base font-semibold text-slate-900 mb-4">Select Services</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {services.map((s) => (
-                                <button key={s._id} onClick={() => addService(s)}
-                                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all text-left group">
-                                    <div>
-                                        <p className="text-sm font-medium text-slate-900 group-hover:text-cyan-700 transition-colors">
-                                            {serviceTypeLabels[s.serviceType]?.split(' ')[0]} {s.name}
-                                        </p>
-                                        <p className="text-xs text-slate-500 mt-0.5">{currency}{s.pricePerUnit}/{s.unit}</p>
-                                    </div>
-                                    <div className="w-8 h-8 rounded-lg bg-cyan-50 flex items-center justify-center text-cyan-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <HiOutlinePlusCircle className="w-5 h-5" />
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
+                        {selectedCustomer?.isPremium && (
+                            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                                Premium customer selected. Only this customer's linked custom services are shown below.
+                            </p>
+                        )}
+                        {services.length === 0 ? (
+                            <div className="text-sm text-slate-500 text-center py-6">No active services available</div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {services.map((s) => (
+                                    <button key={s._id} onClick={() => addService(s)}
+                                        className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all text-left group">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-sm font-medium text-slate-900 group-hover:text-cyan-700 transition-colors truncate">
+                                                    {serviceTypeLabels[s.serviceType]?.split(' ')[0]} {s.name}
+                                                </p>
+                                                {s.isCustomerSpecific && (
+                                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                                        Custom
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-0.5">{currency}{s.pricePerUnit}/{s.unit}</p>
+                                        </div>
+                                        <div className="w-8 h-8 rounded-lg bg-cyan-50 flex items-center justify-center text-cyan-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <HiOutlinePlusCircle className="w-5 h-5" />
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* Manual Items Section */}
@@ -577,13 +683,105 @@ const CreateOrder = () => {
             {/* Quick Add Customer Modal */}
             {showAddCustomer && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="w-full max-w-md mx-4 bg-white border border-slate-200 rounded-2xl p-6 animate-fadeIn">
+                    <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4 bg-white border border-slate-200 rounded-2xl p-6 animate-fadeIn">
                         <h3 className="text-lg font-semibold text-slate-900 mb-4">Quick Add Customer</h3>
                         <form onSubmit={handleQuickAddCustomer} className="space-y-4">
                             <input type="text" required placeholder="Customer Name" value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
                                 className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500" />
                             <input type="tel" required placeholder="Phone Number" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
                                 className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500" />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <input type="email" placeholder="Email" value={newCustomer.email} onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500" />
+                                <select value={newCustomer.customerType} onChange={(e) => setNewCustomer({ ...newCustomer, customerType: e.target.value })}
+                                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:border-cyan-500">
+                                    <option value="walk-in">Walk-in</option>
+                                    <option value="corporate">Corporate</option>
+                                </select>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                                <label className="flex items-center gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={newCustomer.isPremium}
+                                        onChange={(e) => toggleQuickPremium(e.target.checked)}
+                                        className="w-4 h-4 text-cyan-500 rounded focus:ring-cyan-500"
+                                    />
+                                    <span className="text-sm font-medium text-slate-800">Premium customer</span>
+                                </label>
+
+                                {newCustomer.isPremium && (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <p className="text-xs text-slate-500">Add services only this customer can use.</p>
+                                            <button
+                                                type="button"
+                                                onClick={addQuickCustomService}
+                                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500 text-white text-xs font-semibold hover:bg-cyan-600"
+                                            >
+                                                <HiOutlinePlusCircle className="w-4 h-4" />
+                                                Add Service
+                                            </button>
+                                        </div>
+
+                                        {newCustomer.customServices.map((service, index) => (
+                                            <div key={index} className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    <input
+                                                        type="text"
+                                                        required={newCustomer.isPremium}
+                                                        placeholder="Service name"
+                                                        value={service.name}
+                                                        onChange={(e) => updateQuickCustomService(index, 'name', e.target.value)}
+                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
+                                                    />
+                                                    <select
+                                                        value={service.serviceType}
+                                                        onChange={(e) => updateQuickCustomService(index, 'serviceType', e.target.value)}
+                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                    >
+                                                        {serviceTypes.map((type) => (
+                                                            <option key={type} value={type}>{type}</option>
+                                                        ))}
+                                                    </select>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        value={service.pricePerUnit}
+                                                        onChange={(e) => updateQuickCustomService(index, 'pricePerUnit', Number(e.target.value))}
+                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                        placeholder={`Price (${currency})`}
+                                                    />
+                                                    <select
+                                                        value={service.unit}
+                                                        onChange={(e) => updateQuickCustomService(index, 'unit', e.target.value)}
+                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                    >
+                                                        {units.map((unit) => (
+                                                            <option key={unit} value={unit}>{unit}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <textarea
+                                                    rows={2}
+                                                    value={service.description}
+                                                    onChange={(e) => updateQuickCustomService(index, 'description', e.target.value)}
+                                                    placeholder="Description"
+                                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500 resize-none"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeQuickCustomService(index)}
+                                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50"
+                                                >
+                                                    <HiOutlineTrash className="w-4 h-4" />
+                                                    Remove Service
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             <div className="flex gap-3">
                                 <button type="button" onClick={() => setShowAddCustomer(false)}
                                     className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-white">Cancel</button>

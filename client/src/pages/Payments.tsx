@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../context/SettingsContext';
+import Pagination from '../components/Pagination';
 import {
     HiOutlineFilter,
     HiOutlinePlusCircle,
@@ -29,6 +30,12 @@ const Payments = () => {
     const [form, setForm] = useState({ invoice: '', paymentMethod: 'cash', amount: '', note: '' });
     const { currency } = useSettings();
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+    const itemsPerPage = 20;
+
     // ── Filters ──
     const [filterMethod, setFilterMethod] = useState('');
     const [filterCustomer, setFilterCustomer] = useState('');
@@ -40,8 +47,15 @@ const Payments = () => {
     const fetchPayments = async () => {
         try {
             setLoading(true);
-            const res = await api.get('/payments');
+            const params: any = { page: currentPage, limit: itemsPerPage };
+            if (filterMethod) params.paymentMethod = filterMethod;
+            if (filterDateFrom) params.startDate = filterDateFrom;
+            if (filterDateTo) params.endDate = filterDateTo;
+            
+            const res = await api.get('/payments', { params });
             setPayments(res.data.data);
+            setTotalPages(res.data.totalPages || 1);
+            setTotalItems(res.data.total || 0);
         } catch {
             toast.error('Failed to fetch payments');
         } finally {
@@ -49,7 +63,7 @@ const Payments = () => {
         }
     };
 
-    useEffect(() => { fetchPayments(); }, []);
+    useEffect(() => { fetchPayments(); }, [currentPage, filterMethod, filterDateFrom, filterDateTo]);
 
     // ── Client-side filtering ──
     const filteredPayments = useMemo(() => {
@@ -378,6 +392,17 @@ const Payments = () => {
                             )}
                         </table>
                     </div>
+                )}
+                
+                {/* Pagination */}
+                {!loading && filteredPayments.length > 0 && (
+                    <Pagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        totalItems={totalItems}
+                        itemsPerPage={itemsPerPage}
+                        onPageChange={setCurrentPage}
+                    />
                 )}
             </div>
 

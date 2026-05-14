@@ -38,8 +38,30 @@ const serviceSchema = new mongoose.Schema(
             type: Boolean,
             default: true,
         },
+        isCustomerSpecific: {
+            type: Boolean,
+            default: false,
+        },
+        customer: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Customer',
+            default: null,
+        },
+        customerId: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+        customerPhone: {
+            type: String,
+            trim: true,
+            default: '',
+        },
     },
     { timestamps: true }
 );
+
+serviceSchema.index({ isCustomerSpecific: 1, customer: 1 });
+serviceSchema.index({ customerId: 1, customerPhone: 1 });
 
 module.exports = mongoose.model('Service', serviceSchema);

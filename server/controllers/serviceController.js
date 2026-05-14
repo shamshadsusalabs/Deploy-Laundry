@@ -1,14 +1,44 @@
 const Service = require('../models/Service');
+const Customer = require('../models/Customer');
+
+const resolveCustomer = async ({ customer, customerId, phone }) => {
+    const lookup = customer || customerId || phone;
+    if (!lookup) return null;
+
+    const filters = [
+        { customerId: lookup },
+        { phone: lookup },
+    ];
+
+    if (/^[0-9a-fA-F]{24}$/.test(lookup)) {
+        filters.unshift({ _id: lookup });
+    }
+
+    return Customer.findOne({ $or: filters });
+};
 
 // @desc    Get all services
 // @route   GET /api/services
 // @access  Private
 exports.getServices = async (req, res, next) => {
     try {
-        const { serviceType, isActive } = req.query;
+        const { serviceType, isActive, customer, customerId, phone } = req.query;
         const filter = {};
         if (serviceType) filter.serviceType = serviceType;
         if (isActive !== undefined) filter.isActive = isActive === 'true';
+
+        const resolvedCustomer = await resolveCustomer({ customer, customerId, phone });
+
+        if (resolvedCustomer?.isPremium) {
+            filter.isCustomerSpecific = true;
+            filter.$or = [
+                { customer: resolvedCustomer._id },
+                { customerId: resolvedCustomer.customerId },
+                { customerPhone: resolvedCustomer.phone },
+            ];
+        } else {
+            filter.isCustomerSpecific = { $ne: true };
+        }
 
         const services = await Service.find(filter).sort('serviceType name');
         res.status(200).json({ success: true, count: services.length, data: services });

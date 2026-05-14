@@ -24,6 +24,7 @@ export interface ICustomer {
     email?: string;
     address?: string;
     customerType: 'walk-in' | 'corporate';
+    isPremium?: boolean;
     outstandingBalance: number;
     creditBalance?: number; // NEW FIELD
     createdAt: string;
@@ -41,6 +42,10 @@ export interface IService {
     isExpress: boolean;
     expressSurchargePercent: number;
     isActive: boolean;
+    isCustomerSpecific?: boolean;
+    customer?: string;
+    customerId?: string;
+    customerPhone?: string;
 }
 
 // --- ORDER ITEM ---

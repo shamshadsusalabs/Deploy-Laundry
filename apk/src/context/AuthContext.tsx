@@ -10,6 +10,7 @@ interface Customer {
     email?: string;
     address?: string;
     customerType: string;
+    isPremium?: boolean;
 }
 
 interface AuthContextType {

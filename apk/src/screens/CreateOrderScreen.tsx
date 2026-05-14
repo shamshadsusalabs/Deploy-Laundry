@@ -14,6 +14,7 @@ import { Picker } from '@react-native-picker/picker';
 import LinearGradient from 'react-native-linear-gradient';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 
 const serviceTypeLabels: Record<string, { label: string; icon: string; color: string }> = {
     'wash-fold': { label: 'Wash & Fold', icon: '👕', color: '#06b6d4' },
@@ -30,6 +31,10 @@ interface ServiceItem {
     pricePerUnit: number;
     unit: string;
     description?: string;
+    isCustomerSpecific?: boolean;
+    customer?: string;
+    customerId?: string;
+    customerPhone?: string;
 }
 
 interface CartItem {
@@ -48,6 +53,7 @@ interface ManualItem {
 
 export default function CreateOrderScreen({ navigation }: any) {
     const { currency } = useSettings();
+    const { customer } = useAuth();
     const [services, setServices] = useState<ServiceItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState<CartItem[]>([]);
@@ -60,33 +66,43 @@ export default function CreateOrderScreen({ navigation }: any) {
 
 
     useEffect(() => {
+        if (!customer) {
+            setLoading(false);
+            return;
+        }
+
         fetchServices();
-    }, []);
+    }, [customer?._id, customer?.customerId, customer?.phone, customer?.isPremium]);
 
     const fetchServices = async () => {
+        setLoading(true);
         try {
-            const res = await api.get('/customer-portal/services');
-            if (res.data.data && res.data.data.length > 0) {
-                setServices(res.data.data);
-            } else {
-                setServices(FALLBACK_SERVICES);
-            }
+            const res = await api.get('/customer-portal/services', {
+                params: {
+                    customerId: customer?.customerId,
+                    phone: customer?.phone,
+                },
+            });
+            const apiServices: ServiceItem[] = Array.isArray(res.data.data) ? res.data.data : [];
+            const scopedServices = apiServices.filter((service) => {
+                if (customer?.isPremium) {
+                    return Boolean(service.isCustomerSpecific) && (
+                        service.customerId === customer.customerId ||
+                        service.customerPhone === customer.phone ||
+                        String(service.customer || '') === String(customer._id)
+                    );
+                }
+
+                return !service.isCustomerSpecific;
+            });
+            setServices(scopedServices);
         } catch (err) {
             console.error('Failed to load services:', err);
-            setServices(FALLBACK_SERVICES);
+            setServices([]);
         } finally {
             setLoading(false);
         }
     };
-
-    const FALLBACK_SERVICES: ServiceItem[] = [
-        { _id: 'f1', name: 'Premium Wash & Fold', serviceType: 'wash-fold', pricePerUnit: 120, unit: 'kg', description: 'Complete cleaning, drying, and professional folding for your everyday wear.' },
-        { _id: 'f2', name: 'Business Shirt Dry Clean', serviceType: 'dry-cleaning', pricePerUnit: 80, unit: 'pcs', description: 'Premium dry cleaning and starching for a crisp, professional look.' },
-        { _id: 'f3', name: 'Suit Dry Cleaning', serviceType: 'dry-cleaning', pricePerUnit: 350, unit: 'set', description: 'Careful dry cleaning for blazers and trousers using premium solvents.' },
-        { _id: 'f4', name: 'Standard Ironing', serviceType: 'ironing', pricePerUnit: 15, unit: 'pcs', description: 'Steam ironing for wrinkle-free clothes delivered on hangers.' },
-        { _id: 'f5', name: 'Same Day Express Service', serviceType: 'express', pricePerUnit: 500, unit: 'order', description: 'Priority processing for your urgent laundry needs. Delivery within 8-12 hours.' },
-        { _id: 'f6', name: 'Curtain Dry Cleaning', serviceType: 'dry-cleaning', pricePerUnit: 450, unit: 'pair', description: 'Deep cleaning for heavy curtains to remove dust and allergens.' },
-    ];
 
 
     const addToCart = (service: ServiceItem) => {
@@ -281,6 +297,47 @@ export default function CreateOrderScreen({ navigation }: any) {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+                {customer?.isPremium && (
+                    <View
+                        style={{
+                            marginHorizontal: 20,
+                            marginBottom: 16,
+                            padding: 12,
+                            borderRadius: 14,
+                            backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(245, 158, 11, 0.35)',
+                        }}
+                    >
+                        <Text style={{ color: '#fbbf24', fontSize: 12, fontWeight: '700' }}>
+                            Premium account: only services linked to {customer.phone} are shown.
+                        </Text>
+                    </View>
+                )}
+
+                {services.length === 0 && (
+                    <View
+                        style={{
+                            marginHorizontal: 20,
+                            marginBottom: 20,
+                            padding: 18,
+                            borderRadius: 16,
+                            backgroundColor: '#1e293b',
+                            borderWidth: 1,
+                            borderColor: '#334155',
+                        }}
+                    >
+                        <Text style={{ color: '#f1f5f9', fontSize: 15, fontWeight: '700', marginBottom: 6 }}>
+                            No services available
+                        </Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 12, lineHeight: 18 }}>
+                            {customer?.isPremium
+                                ? 'No custom services are linked with your phone number yet.'
+                                : 'No active services are available right now.'}
+                        </Text>
+                    </View>
+                )}
+
                 {Object.entries(grouped).map(([type, items]) => {
                     const typeInfo = serviceTypeLabels[type] || { label: type, icon: '📋', color: '#94a3b8' };
 
@@ -316,6 +373,11 @@ export default function CreateOrderScreen({ navigation }: any) {
                                                 <Text style={{ color: '#f1f5f9', fontSize: 15, fontWeight: '600' }}>
                                                     {service.name}
                                                 </Text>
+                                                {service.isCustomerSpecific ? (
+                                                    <Text style={{ color: '#fbbf24', fontSize: 11, marginTop: 2, fontWeight: '700' }}>
+                                                        Custom service for {service.customerPhone || customer?.phone}
+                                                    </Text>
+                                                ) : null}
                                                 {service.description ? (
                                                     <Text style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>
                                                         {service.description}
@@ -909,4 +971,3 @@ export default function CreateOrderScreen({ navigation }: any) {
         </View>
     );
 }
-

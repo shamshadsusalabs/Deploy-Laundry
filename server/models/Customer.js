@@ -38,6 +38,10 @@ const customerSchema = new mongoose.Schema(
             enum: ['walk-in', 'corporate'],
             default: 'walk-in',
         },
+        isPremium: {
+            type: Boolean,
+            default: false,
+        },
         outstandingBalance: {
             type: Number,
             default: 0,

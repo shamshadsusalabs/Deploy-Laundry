@@ -13,7 +13,7 @@ import {
 type Tab = 'business' | 'billing' | 'services';
 
 const serviceTypes = ['wash-fold', 'dry-cleaning', 'ironing', 'express', 'bulk-commercial'];
-const units = ['kg', 'piece', 'pair', 'set', 'load'];
+const units = ['kg', 'piece', 'bundle'];
 
 const Settings = () => {
     const [activeTab, setActiveTab] = useState<Tab>('business');
@@ -301,8 +301,22 @@ const Settings = () => {
                         {services.map((s: any) => (
                             <div key={s._id} className={`rounded-2xl border p-4 transition-colors ${s.isActive ? 'border-slate-200 bg-white' : 'border-red-500/20 bg-red-500/5 opacity-60'
                                 }`}>
-                                <div className="flex items-center justify-between mb-2">
-                                    <h3 className="text-sm font-semibold text-slate-900">{s.name}</h3>
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <h3 className="text-sm font-semibold text-slate-900 truncate">{s.name}</h3>
+                                            {s.isCustomerSpecific && (
+                                                <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                                    Custom
+                                                </span>
+                                            )}
+                                        </div>
+                                        {s.isCustomerSpecific && (
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                {s.customerPhone || 'No phone'}{s.customerId ? ` • ${s.customerId}` : ''}
+                                            </p>
+                                        )}
+                                    </div>
                                     <div className="flex gap-1">
                                         <button onClick={() => openServiceEdit(s)} className="p-1.5 text-slate-500 hover:text-cyan-600">
                                             <HiOutlinePencil className="w-4 h-4" />

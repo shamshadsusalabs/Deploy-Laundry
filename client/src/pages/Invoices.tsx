@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../context/SettingsContext';
+import Pagination from '../components/Pagination';
 import {
     HiOutlineFilter,
     HiOutlineDownload,
@@ -14,11 +15,28 @@ import {
     HiOutlineChevronDown,
 } from 'react-icons/hi';
 
+type DatePreset = '' | '7d' | '15d' | '1m';
+type BatchAction = '' | 'view' | 'pdf' | 'print';
+
+const toDateInputValue = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 const Invoices = () => {
     const [invoices, setInvoices] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { currency } = useSettings();
     const [viewInvoice, setViewInvoice] = useState<any>(null);
+    const [batchAction, setBatchAction] = useState<BatchAction>('');
+
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+    const itemsPerPage = 20;
 
     // ── Filters ──
     const [filterStatus, setFilterStatus] = useState('');
@@ -26,13 +44,19 @@ const Invoices = () => {
     const [filterOrderId, setFilterOrderId] = useState('');
     const [filterDateFrom, setFilterDateFrom] = useState('');
     const [filterDateTo, setFilterDateTo] = useState('');
+    const [filterDatePreset, setFilterDatePreset] = useState<DatePreset>('');
     const [showFilters, setShowFilters] = useState(false);
 
     const fetchInvoices = async () => {
         try {
             setLoading(true);
-            const res = await api.get('/invoices');
+            const params: any = { page: currentPage, limit: itemsPerPage };
+            if (filterStatus) params.paymentStatus = filterStatus;
+            
+            const res = await api.get('/invoices', { params });
             setInvoices(res.data.data);
+            setTotalPages(res.data.totalPages || 1);
+            setTotalItems(res.data.total || 0);
         } catch (err: any) {
             toast.error('Failed to fetch invoices');
         } finally {
@@ -40,7 +64,7 @@ const Invoices = () => {
         }
     };
 
-    useEffect(() => { fetchInvoices(); }, []);
+    useEffect(() => { fetchInvoices(); }, [currentPage, filterStatus]);
 
     // ── Client-side filtering ──
     const filteredInvoices = useMemo(() => {
@@ -50,7 +74,8 @@ const Invoices = () => {
                 const q = filterCustomer.toLowerCase();
                 const name = (inv.customer?.name || '').toLowerCase();
                 const phone = (inv.customer?.phone || '').toLowerCase();
-                if (!name.includes(q) && !phone.includes(q)) return false;
+                const customerId = (inv.customer?.customerId || '').toLowerCase();
+                if (!name.includes(q) && !phone.includes(q) && !customerId.includes(q)) return false;
             }
             if (filterOrderId) {
                 const q = filterOrderId.toLowerCase();
@@ -73,7 +98,10 @@ const Invoices = () => {
         });
     }, [invoices, filterStatus, filterCustomer, filterOrderId, filterDateFrom, filterDateTo]);
 
-    const activeFilterCount = [filterStatus, filterCustomer, filterOrderId, filterDateFrom, filterDateTo].filter(Boolean).length;
+    const hasDateFilter = Boolean(filterDateFrom || filterDateTo);
+    const activeFilterCount = [filterStatus, filterCustomer, filterOrderId, hasDateFilter ? 'date' : ''].filter(Boolean).length;
+    const hasActiveFilters = activeFilterCount > 0;
+    const showRowActions = !hasActiveFilters;
 
     const clearFilters = () => {
         setFilterStatus('');
@@ -81,6 +109,25 @@ const Invoices = () => {
         setFilterOrderId('');
         setFilterDateFrom('');
         setFilterDateTo('');
+        setFilterDatePreset('');
+    };
+
+    const applyDatePreset = (preset: DatePreset) => {
+        setFilterDatePreset(preset);
+        if (!preset) {
+            setFilterDateFrom('');
+            setFilterDateTo('');
+            return;
+        }
+
+        const today = new Date();
+        const from = new Date(today);
+        if (preset === '7d') from.setDate(today.getDate() - 6);
+        if (preset === '15d') from.setDate(today.getDate() - 14);
+        if (preset === '1m') from.setMonth(today.getMonth() - 1);
+
+        setFilterDateFrom(toDateInputValue(from));
+        setFilterDateTo(toDateInputValue(today));
     };
 
     const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
@@ -542,6 +589,708 @@ const Invoices = () => {
         setTimeout(() => { printWindow.print(); }, 500);
     };
 
+    const generateBatchInvoiceHTML = (batchInvoices: any[]) => {
+        const formatMoney = (amount: number) => `${currency}${Number(amount || 0).toFixed(2)}`;
+        const formatShortDate = (date?: string) => (
+            date ? new Date(date).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+        );
+        const formatMetaDate = (date?: string) => (
+            date ? new Date(date).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase() : '-'
+        );
+        const escapeHtml = (value: any) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+
+        const titleParts = [
+            filterCustomer ? `Customer: ${filterCustomer}` : '',
+            filterDateFrom || filterDateTo ? `${filterDateFrom || 'Start'} to ${filterDateTo || 'Today'}` : '',
+            filterOrderId ? `ID: ${filterOrderId}` : '',
+            filterStatus ? `Status: ${filterStatus}` : '',
+        ].filter(Boolean);
+        const title = titleParts.length > 0 ? titleParts.join(' | ') : 'All filtered invoices';
+        const biz = batchInvoices[0]?.business || {};
+        const firstCustomer = batchInvoices[0]?.customer || batchInvoices[0]?.order?.customer || {};
+        const allSameCustomer = batchInvoices.every((inv) => {
+            const customer = inv.customer || inv.order?.customer || {};
+            return String(customer._id || customer.customerId || customer.phone || '') === String(firstCustomer._id || firstCustomer.customerId || firstCustomer.phone || '');
+        });
+        const billTo = allSameCustomer ? firstCustomer : { name: 'Multiple Customers' };
+        const totals = batchInvoices.reduce((acc, inv) => ({
+            subtotal: acc.subtotal + Number(inv.subtotal || 0),
+            tax: acc.tax + Number(inv.taxAmount || 0),
+            discount: acc.discount + Number(inv.discountAmount || 0),
+            total: acc.total + Number(inv.totalAmount || 0),
+            paid: acc.paid + Number(inv.paidAmount || 0),
+            due: acc.due + Number(inv.balanceDue || 0),
+        }), { subtotal: 0, tax: 0, discount: 0, total: 0, paid: 0, due: 0 });
+        const generatedAt = new Date().toLocaleString('en-AU', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+        const periodText = filterDateFrom || filterDateTo
+            ? `${filterDateFrom ? formatMetaDate(filterDateFrom) : 'START'} - ${filterDateTo ? formatMetaDate(filterDateTo) : 'TODAY'}`
+            : 'FILTERED';
+        const reportNumber = batchInvoices.length === 1
+            ? (batchInvoices[0].invoiceNumber || batchInvoices[0].invoiceId)
+            : `${batchInvoices[batchInvoices.length - 1]?.invoiceId || 'INV'} - ${batchInvoices[0]?.invoiceId || 'INV'}`;
+        const paymentAccountName = biz.bankAccountName || 'JSP CORPORATION PTY LTD';
+        const paymentBank = biz.bankName || 'ANZ';
+        const paymentBSB = biz.bankBSB || '012787';
+        const paymentAccountNo = biz.bankAccountNo || '';
+        const abn = biz.taxNumber || biz.abn || '31647801045';
+
+        const invoiceRows = batchInvoices.map((inv) => {
+            const order = inv.order || {};
+            const items = order.items || [];
+            const services = items.filter((item: any) => !item.isRefunded && item.serviceType !== 'manual' && item.service);
+            const manualItems = items.filter((item: any) => !item.isRefunded && (item.serviceType === 'manual' || !item.service));
+            const refundedItems = items.filter((item: any) => item.isRefunded);
+            const deliveryDate = order.deliveryDate ? formatShortDate(order.deliveryDate) : formatShortDate(inv.createdAt);
+            const due = Number(inv.balanceDue || 0);
+            const invoiceLabel = inv.invoiceNumber || inv.invoiceId || '-';
+            const invoiceDate = formatMetaDate(inv.createdAt);
+            const serviceRows = services.length > 0 ? `
+                <tr class="section-row"><td colspan="5">Services - Billable</td></tr>
+                ${services.map((item: any, idx: number) => `
+                    <tr>
+                        <td>${idx === 0 ? deliveryDate : '-'}</td>
+                        <td>
+                            <strong>${escapeHtml(item.serviceName || item.itemName || 'Service')}</strong>
+                            <div class="muted">${escapeHtml(invoiceLabel)}${order.orderId ? ` | ${escapeHtml(order.orderId)}` : ''}</div>
+                        </td>
+                        <td class="center">${Number(item.quantity || 0)}</td>
+                        <td class="right">${formatMoney(item.pricePerUnit)}</td>
+                        <td class="right strong">${formatMoney(item.subtotal)}</td>
+                    </tr>
+                `).join('')}
+            ` : '';
+            const manualRows = manualItems.length > 0 ? `
+                <tr class="section-row"><td colspan="5">Items - Tracking Only (Not Billed)</td></tr>
+                ${manualItems.map((item: any, idx: number) => `
+                    <tr>
+                        <td>${idx === 0 && services.length === 0 ? deliveryDate : '-'}</td>
+                        <td>
+                            <strong>${escapeHtml(item.itemName || item.serviceName || 'Item')}</strong>
+                            <div class="muted">${escapeHtml(invoiceLabel)}${order.orderId ? ` | ${escapeHtml(order.orderId)}` : ''}</div>
+                        </td>
+                        <td class="center">${Number(item.quantity || 0)}</td>
+                        <td class="right strike">${formatMoney(item.pricePerUnit)}</td>
+                        <td class="right muted-strong">Not Billed</td>
+                    </tr>
+                `).join('')}
+                <tr class="info-row">
+                    <td colspan="5">These items are tracked for damage reference only and NOT included in billing</td>
+                </tr>
+            ` : '';
+            const refundedRows = refundedItems.length > 0 ? `
+                <tr class="section-row"><td colspan="5">Refunded Items</td></tr>
+                ${refundedItems.map((item: any, idx: number) => `
+                    <tr>
+                        <td>${idx === 0 && services.length === 0 && manualItems.length === 0 ? deliveryDate : '-'}</td>
+                        <td>
+                            <strong>${escapeHtml(item.serviceName || item.itemName || 'Refunded item')}</strong>
+                            ${item.refundReason ? `<div class="refund-note">Reason: ${escapeHtml(item.refundReason)}</div>` : ''}
+                        </td>
+                        <td class="center">${Number(item.damagedQuantity || item.quantity || 0)}</td>
+                        <td class="right">${formatMoney(item.pricePerUnit)}</td>
+                        <td class="right refund">-${formatMoney(item.refundAmount || item.subtotal || 0)}</td>
+                    </tr>
+                `).join('')}
+            ` : '';
+
+            return `
+                <tr class="invoice-row">
+                    <td colspan="5">
+                        <div class="invoice-row-inner">
+                            <span>${escapeHtml(invoiceLabel)}${order.orderId ? ` | ${escapeHtml(order.orderId)}` : ''} | ${invoiceDate}</span>
+                            <span>Total ${formatMoney(inv.totalAmount)} | Paid ${formatMoney(inv.paidAmount)} | Due ${due < 0 ? '-' : ''}${formatMoney(Math.abs(due))}</span>
+                        </div>
+                    </td>
+                </tr>
+                ${serviceRows || manualRows || refundedRows ? `${serviceRows}${manualRows}${refundedRows}` : `
+                    <tr><td colspan="5" class="empty-row">No order items found for this invoice</td></tr>
+                `}
+            `;
+        }).join('');
+
+        return `
+            <html>
+                <head>
+                    <title>Invoice Report - ${escapeHtml(title)}</title>
+                    <style>
+                        * { box-sizing: border-box; }
+                        body {
+                            margin: 0;
+                            background: #f8fafc;
+                            color: #1a1a2e;
+                            font-family: Arial, sans-serif;
+                            font-size: 12px;
+                            -webkit-print-color-adjust: exact;
+                            print-color-adjust: exact;
+                        }
+                        .batch-toolbar {
+                            position: sticky;
+                            top: 0;
+                            z-index: 10;
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            gap: 16px;
+                            padding: 12px 20px;
+                            background: #ffffff;
+                            border-bottom: 1px solid #e2e8f0;
+                            font-family: Arial, sans-serif;
+                            color: #334155;
+                        }
+                        .batch-toolbar h1 {
+                            margin: 0;
+                            font-size: 14px;
+                            color: #0f172a;
+                        }
+                        .batch-toolbar p {
+                            margin: 2px 0 0;
+                            font-size: 12px;
+                            color: #64748b;
+                        }
+                        .batch-toolbar button {
+                            border: 0;
+                            border-radius: 8px;
+                            padding: 8px 12px;
+                            background: #0891b2;
+                            color: white;
+                            font-size: 12px;
+                            font-weight: 700;
+                            cursor: pointer;
+                        }
+                        .report-page {
+                            background: #ffffff;
+                            max-width: 900px;
+                            margin: 24px auto;
+                            padding: 24px;
+                            box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+                        }
+                        .report-header {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: flex-start;
+                            gap: 24px;
+                            padding-bottom: 16px;
+                            border-bottom: 1px solid #e2e8f0;
+                            margin-bottom: 16px;
+                        }
+                        .logo-block {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 4px;
+                        }
+                        .logo {
+                            max-height: 48px;
+                            max-width: 110px;
+                            object-fit: contain;
+                            margin-bottom: 4px;
+                        }
+                        .tagline {
+                            font-size: 7px;
+                            letter-spacing: 2px;
+                            color: #94a3b8;
+                            text-transform: uppercase;
+                            margin-bottom: 8px;
+                        }
+                        .company {
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: #1a1a2e;
+                            margin-bottom: 4px;
+                        }
+                        .ta {
+                            font-size: 11px;
+                            color: #64748b;
+                            margin-bottom: 8px;
+                        }
+                        .center-block {
+                            flex: 1;
+                        }
+                        .right-block {
+                            text-align: right;
+                        }
+                        .abn-label {
+                            font-size: 9px;
+                            font-weight: 600;
+                            color: #94a3b8;
+                            text-transform: uppercase;
+                            letter-spacing: 2px;
+                            margin-bottom: 4px;
+                        }
+                        .abn-value {
+                            font-size: 18px;
+                            font-weight: 900;
+                            color: #1a1a2e;
+                            letter-spacing: 1px;
+                            margin-bottom: 12px;
+                        }
+                        .meta {
+                            font-size: 11px;
+                            color: #64748b;
+                            line-height: 1.6;
+                        }
+                        .contact-line {
+                            display: flex;
+                            align-items: center;
+                            gap: 6px;
+                            font-size: 11px;
+                            color: #475569;
+                            margin-bottom: 4px;
+                        }
+                        .right-block .contact-line {
+                            justify-content: flex-end;
+                        }
+                        .bill-section {
+                            display: grid;
+                            grid-template-columns: 1fr 1fr;
+                            gap: 24px;
+                            align-items: flex-start;
+                            margin: 16px 0 12px;
+                        }
+                        .bill-label {
+                            font-size: 9px;
+                            text-transform: uppercase;
+                            letter-spacing: 2px;
+                            color: #94a3b8;
+                            font-weight: 600;
+                            margin-bottom: 6px;
+                        }
+                        .customer-name {
+                            font-weight: 700;
+                            color: #1a1a2e;
+                            font-size: 14px;
+                            margin-bottom: 4px;
+                        }
+                        .tax-block {
+                            text-align: right;
+                        }
+                        .tax-btn {
+                            background: #1c2a5e;
+                            color: #fff;
+                            font-size: 13px;
+                            font-weight: 700;
+                            padding: 8px 20px;
+                            border-radius: 8px;
+                            letter-spacing: 1px;
+                            display: inline-block;
+                        }
+                        .meta-bar {
+                            display: grid;
+                            grid-template-columns: repeat(5, 1fr);
+                            border: 1px solid #cbd5e1;
+                            border-radius: 12px;
+                            overflow: hidden;
+                            font-size: 12px;
+                            margin-bottom: 14px;
+                        }
+                        .meta-cell {
+                            padding: 10px 12px;
+                            border-right: 1px solid #cbd5e1;
+                        }
+                        .meta-cell:nth-child(even) {
+                            background: #f8fafc;
+                        }
+                        .meta-cell:last-child {
+                            border-right: 0;
+                        }
+                        .meta-label {
+                            font-size: 9px;
+                            text-transform: uppercase;
+                            letter-spacing: 1.5px;
+                            color: #94a3b8;
+                            margin-bottom: 4px;
+                            font-weight: 600;
+                        }
+                        .meta-value {
+                            font-weight: 700;
+                            color: #1a1a2e;
+                            font-size: 12px;
+                            overflow-wrap: anywhere;
+                        }
+                        .meta-value-blue {
+                            color: #1c2a5e;
+                        }
+                        table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            border: 1px solid #cbd5e1;
+                            border-radius: 8px;
+                            overflow: hidden;
+                            font-size: 11px;
+                            margin-bottom: 12px;
+                        }
+                        th {
+                            background: #1c2a5e;
+                            color: #ffffff;
+                            padding: 8px 12px;
+                            text-align: left;
+                            font-size: 11px;
+                            font-weight: 700;
+                        }
+                        td {
+                            padding: 8px 12px;
+                            border-bottom: 1px solid #e2e8f0;
+                            vertical-align: top;
+                            color: #1a1a2e;
+                        }
+                        .right { text-align: right; }
+                        .center { text-align: center; }
+                        .strong { font-weight: 700; }
+                        .invoice-row td {
+                            background: #e8eefc;
+                            color: #1c2a5e;
+                            font-weight: 800;
+                            text-transform: uppercase;
+                            font-size: 10px;
+                        }
+                        .invoice-row-inner {
+                            display: flex;
+                            justify-content: space-between;
+                            gap: 12px;
+                        }
+                        .section-row td {
+                            background: #f1f5f9;
+                            padding: 8px 12px;
+                            font-weight: 700;
+                            font-size: 10px;
+                            text-transform: capitalize;
+                            color: #475569;
+                        }
+                        .muted {
+                            color: #64748b;
+                            font-size: 10px;
+                            margin-top: 3px;
+                        }
+                        .muted-strong {
+                            color: #64748b;
+                            font-weight: 600;
+                        }
+                        .strike {
+                            color: #94a3b8;
+                            text-decoration: line-through;
+                        }
+                        .info-row td {
+                            background: #f8fafc;
+                            text-align: center;
+                            font-size: 10px;
+                            color: #64748b;
+                        }
+                        .refund, .refund-note {
+                            color: #b91c1c;
+                        }
+                        .empty-row {
+                            text-align: center;
+                            color: #64748b;
+                            background: #f8fafc;
+                        }
+                        .bottom-section {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: flex-end;
+                            padding-top: 8px;
+                        }
+                        .note {
+                            font-size: 10px;
+                            color: #3b82f6;
+                            font-style: italic;
+                        }
+                        .summary-block {
+                            text-align: right;
+                            min-width: 230px;
+                        }
+                        .amount-due-btn {
+                            background: #1c2a5e;
+                            color: #fff;
+                            font-size: 14px;
+                            font-weight: 700;
+                            padding: 8px 24px;
+                            border-radius: 8px;
+                            display: inline-block;
+                            margin-bottom: 12px;
+                            letter-spacing: 1px;
+                        }
+                        .summary-row {
+                            display: flex;
+                            justify-content: space-between;
+                            gap: 48px;
+                            font-size: 12px;
+                            color: #64748b;
+                            margin-bottom: 6px;
+                        }
+                        .summary-total {
+                            display: flex;
+                            justify-content: space-between;
+                            gap: 48px;
+                            background: #1c2a5e;
+                            color: #fff;
+                            font-weight: 900;
+                            font-size: 14px;
+                            padding: 8px 16px;
+                            border-radius: 8px;
+                            margin-top: 8px;
+                            margin-bottom: 8px;
+                        }
+                        .summary-paid {
+                            display: flex;
+                            justify-content: space-between;
+                            gap: 48px;
+                            font-size: 11px;
+                            color: #64748b;
+                            padding: 0 4px;
+                            margin-bottom: 4px;
+                        }
+                        .green { color: #10b981; font-weight: 700; }
+                        .red { color: #dc2626; font-weight: 700; }
+                        .payment-section {
+                            display: flex;
+                            gap: 20px;
+                            padding-top: 16px;
+                            border-top: 1px solid #cbd5e1;
+                            margin-top: 16px;
+                        }
+                        .payment-box {
+                            background: #f8fafc;
+                            border-radius: 12px;
+                            padding: 16px;
+                            min-width: 220px;
+                        }
+                        .payment-title {
+                            display: flex;
+                            align-items: center;
+                            gap: 6px;
+                            font-weight: 700;
+                            color: #1a1a2e;
+                            font-size: 12px;
+                            margin-bottom: 8px;
+                        }
+                        .payment-text {
+                            font-size: 11px;
+                            color: #475569;
+                            line-height: 1.7;
+                        }
+                        .disclaimer {
+                            font-size: 10px;
+                            color: #64748b;
+                            line-height: 1.6;
+                            flex: 1;
+                            padding-top: 4px;
+                        }
+                        .disclaimer-title {
+                            font-weight: 700;
+                            color: #3b82f6;
+                            font-size: 11px;
+                            margin-bottom: 6px;
+                        }
+                        @page { size: A4 portrait; margin: 12mm; }
+                        @media print {
+                            html, body { background: #ffffff !important; margin: 0 !important; padding: 0 !important; }
+                            .batch-toolbar { display: none; }
+                            .report-page {
+                                margin: 0;
+                                padding: 0;
+                                box-shadow: none;
+                                max-width: none;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="batch-toolbar">
+                        <div>
+                            <h1>Tax Invoice Batch</h1>
+                            <p>${batchInvoices.length} invoice${batchInvoices.length === 1 ? '' : 's'} in this batch</p>
+                        </div>
+                        <button onclick="window.print()">Print / Save PDF</button>
+                    </div>
+                    <main class="report-page">
+                        <div class="report-header">
+                            <div class="logo-block">
+                                <img src="${window.location.origin}/logo.jpeg" alt="Peninsula Laundries" class="logo" />
+                                <div class="tagline">L A U N D R I E S</div>
+                                <div class="contact-line"><span>🌐</span>${escapeHtml(biz.website || 'peninsulalaundries.com.au')}</div>
+                                <div class="contact-line"><span>📧</span>${escapeHtml(biz.email || 'orders@peninsulalaundries.com.au')}</div>
+                            </div>
+                            <div class="center-block">
+                                <div class="company">${escapeHtml(biz.companyName || 'JSP Corporation Pty Ltd')}</div>
+                                <div class="ta">T/A Peninsula Laundries</div>
+                                <div class="contact-line">
+                                    <span>📍</span>
+                                    <span>
+                                        ${escapeHtml(biz.address || '13 Redcliffe Gardens Drive')}<br/>
+                                        ${escapeHtml([biz.suburb || 'Clontarf', biz.state || 'Queensland', biz.postcode || '4019', 'Australia'].filter(Boolean).join(', '))}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="right-block">
+                                <div class="abn-label">A.B.N.</div>
+                                <div class="abn-value">${escapeHtml(abn)}</div>
+                                <div class="contact-line"><span>📞</span>${escapeHtml(biz.phone || '61475902921')}</div>
+                            </div>
+                        </div>
+
+                        <div class="bill-section">
+                            <div>
+                                <div class="bill-label">Bill To</div>
+                                <div class="customer-name">${escapeHtml(billTo.name || '-')}</div>
+                                ${billTo.address ? `<div class="contact-line"><span>📍</span>${escapeHtml(billTo.address)}</div>` : ''}
+                                ${allSameCustomer && billTo.phone ? `<div class="contact-line"><span>📞</span>${escapeHtml(billTo.phone)}</div>` : ''}
+                                ${allSameCustomer && billTo.email ? `<div class="contact-line"><span>📧</span>${escapeHtml(billTo.email)}</div>` : ''}
+                            </div>
+                            <div class="tax-block">
+                                <div class="tax-btn"><span style="font-size: 20px; font-weight: 300;">+</span> Tax Invoice</div>
+                                <div class="meta">
+                                    <span style="font-weight: 600; color: #475569;">Invoices: </span>${batchInvoices.length}<br/>
+                                    ${escapeHtml(title)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="meta-bar">
+                            <div class="meta-cell">
+                                <div class="meta-label">REPORT #</div>
+                                <div class="meta-value">${escapeHtml(reportNumber || '-')}</div>
+                            </div>
+                            <div class="meta-cell">
+                                <div class="meta-label">DATE</div>
+                                <div class="meta-value">${escapeHtml(generatedAt.toUpperCase())}</div>
+                            </div>
+                            <div class="meta-cell">
+                                <div class="meta-label">PERIOD</div>
+                                <div class="meta-value red">${escapeHtml(periodText)}</div>
+                            </div>
+                            <div class="meta-cell">
+                                <div class="meta-label">TOTAL</div>
+                                <div class="meta-value meta-value-blue">${formatMoney(totals.total)}</div>
+                            </div>
+                            <div class="meta-cell">
+                                <div class="meta-label">INVOICES</div>
+                                <div class="meta-value">${batchInvoices.length}</div>
+                            </div>
+                        </div>
+
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Delivery Date</th>
+                                    <th>Item Name</th>
+                                    <th style="text-align:center;">Qty</th>
+                                    <th style="text-align:right;">Rate</th>
+                                    <th style="text-align:right;">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${invoiceRows}
+                            </tbody>
+                        </table>
+
+                        <div class="bottom-section">
+                            <div class="note">* Items marked with * are rental carts.</div>
+                            <div class="summary-block">
+                                <div class="amount-due-btn">AMOUNT DUE</div>
+                                <div class="summary-row">
+                                    <span>Sub Total</span>
+                                    <span style="font-weight: 600; color: #475569;">${formatMoney(totals.subtotal)}</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Sales Tax</span>
+                                    <span style="font-weight: 600; color: #475569;">${formatMoney(totals.tax)}</span>
+                                </div>
+                                ${totals.discount > 0 ? `
+                                    <div class="summary-row">
+                                        <span>Discount</span>
+                                        <span class="green">-${formatMoney(totals.discount)}</span>
+                                    </div>
+                                ` : ''}
+                                <div class="summary-total">
+                                    <span>TOTAL</span>
+                                    <span>${formatMoney(totals.total)}</span>
+                                </div>
+                                <div class="summary-paid">
+                                    <span>Paid</span>
+                                    <span class="green">${formatMoney(totals.paid)}</span>
+                                </div>
+                                <div class="summary-paid">
+                                    <span>${totals.due < 0 ? 'Refund Due to Customer' : 'Balance Due'}</span>
+                                    <span class="${totals.due > 0 ? 'red' : 'green'}">${totals.due < 0 ? '-' : ''}${formatMoney(Math.abs(totals.due))}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="payment-section">
+                            <div class="payment-box">
+                                <div class="payment-title">🏦 PAYMENT</div>
+                                <div class="payment-text">
+                                    <div><strong>Direct Deposit:</strong></div>
+                                    <div>Account Name: ${escapeHtml(paymentAccountName)}</div>
+                                    <div>Bank: ${escapeHtml(paymentBank)} &nbsp; BSB: ${escapeHtml(paymentBSB)}</div>
+                                    <div>Account NO: ${escapeHtml(paymentAccountNo)}</div>
+                                </div>
+                            </div>
+                            <div class="disclaimer">
+                                <div class="disclaimer-title">Disclaimer:</div>
+                                ${escapeHtml(biz.name || 'JSP Corporation Pty Ltd T/as Peninsula Laundries')} reserves the right to claim ownership of any linen that has not been returned. We also reserve the right to seek legal advice and pursue recovery of replacement costs for any unreturned or missing items.
+                            </div>
+                        </div>
+                    </main>
+                </body>
+            </html>
+        `;
+    };
+
+    const openBatchInvoices = async (action: Exclude<BatchAction, ''>) => {
+        if (filteredInvoices.length === 0) {
+            toast.error('No invoices found for selected filters');
+            return;
+        }
+
+        const batchWindow = window.open('', '_blank', 'width=1000,height=800');
+        if (!batchWindow) {
+            toast.error('Please allow popups to open batch invoices');
+            return;
+        }
+
+        setBatchAction(action);
+        batchWindow.document.write(`
+            <html><body style="font-family: Arial, sans-serif; padding: 32px; color: #334155;">
+                <h3 style="margin: 0 0 8px;">Preparing invoices...</h3>
+                <p style="margin: 0;">Loading ${filteredInvoices.length} filtered invoice${filteredInvoices.length === 1 ? '' : 's'}.</p>
+            </body></html>
+        `);
+        batchWindow.document.close();
+
+        try {
+            const detailedInvoices = [];
+            for (const inv of filteredInvoices) {
+                const res = await api.get(`/invoices/${inv._id}`);
+                detailedInvoices.push(res.data.data);
+            }
+
+            batchWindow.document.open();
+            batchWindow.document.write(generateBatchInvoiceHTML(detailedInvoices));
+            batchWindow.document.close();
+            batchWindow.focus();
+
+            if (action !== 'view') {
+                setTimeout(() => { batchWindow.print(); }, 700);
+            }
+        } catch {
+            batchWindow.close();
+            toast.error('Failed to prepare batch invoices');
+        } finally {
+            setBatchAction('');
+        }
+    };
+
     /* ─────────────────────────────────────────────
        STATUS BADGE
     ───────────────────────────────────────────── */
@@ -599,7 +1348,7 @@ const Invoices = () => {
             {/* ── ADVANCED FILTER PANEL ── */}
             {showFilters && (
                 <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
 
                         {/* Customer Search */}
                         <div className="flex flex-col gap-1.5">
@@ -608,7 +1357,7 @@ const Invoices = () => {
                                 <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                                 <input
                                     type="text"
-                                    placeholder="Name or phone…"
+                                    placeholder="Name, phone, or ID…"
                                     value={filterCustomer}
                                     onChange={(e) => setFilterCustomer(e.target.value)}
                                     className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent placeholder:text-slate-300"
@@ -631,6 +1380,25 @@ const Invoices = () => {
                             </div>
                         </div>
 
+                        {/* Quick Date Range */}
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Quick Range</label>
+                            <div className="relative">
+                                <HiOutlineCalendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                <select
+                                    value={filterDatePreset}
+                                    onChange={(e) => applyDatePreset(e.target.value as DatePreset)}
+                                    className="w-full pl-8 pr-7 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent appearance-none cursor-pointer"
+                                >
+                                    <option value="">Custom dates</option>
+                                    <option value="7d">Last 1 week</option>
+                                    <option value="15d">Last 15 days</option>
+                                    <option value="1m">Last 1 month</option>
+                                </select>
+                                <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                            </div>
+                        </div>
+
                         {/* Date From */}
                         <div className="flex flex-col gap-1.5">
                             <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Date From</label>
@@ -639,7 +1407,10 @@ const Invoices = () => {
                                 <input
                                     type="date"
                                     value={filterDateFrom}
-                                    onChange={(e) => setFilterDateFrom(e.target.value)}
+                                    onChange={(e) => {
+                                        setFilterDatePreset('');
+                                        setFilterDateFrom(e.target.value);
+                                    }}
                                     className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
                                 />
                             </div>
@@ -653,7 +1424,10 @@ const Invoices = () => {
                                 <input
                                     type="date"
                                     value={filterDateTo}
-                                    onChange={(e) => setFilterDateTo(e.target.value)}
+                                    onChange={(e) => {
+                                        setFilterDatePreset('');
+                                        setFilterDateTo(e.target.value);
+                                    }}
                                     className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
                                 />
                             </div>
@@ -679,19 +1453,48 @@ const Invoices = () => {
                         </div>
                     </div>
 
-                    {/* Clear filters */}
-                    {activeFilterCount > 0 && (
-                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    {/* Batch actions */}
+                    {hasActiveFilters && (
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                             <p className="text-xs text-slate-400">
                                 Showing <span className="font-semibold text-slate-700">{filteredInvoices.length}</span> of {invoices.length} invoices
                             </p>
-                            <button
-                                onClick={clearFilters}
-                                className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 font-medium transition-colors"
-                            >
-                                <HiOutlineX className="w-3.5 h-3.5" />
-                                Clear all filters
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    onClick={() => openBatchInvoices('view')}
+                                    disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
+                                    title="View all filtered invoices"
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:text-cyan-700 hover:border-cyan-200 hover:bg-cyan-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <HiOutlineEye className="w-3.5 h-3.5" />
+                                    {batchAction === 'view' ? 'Loading...' : 'View All'}
+                                </button>
+                                <button
+                                    onClick={() => openBatchInvoices('pdf')}
+                                    disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
+                                    title="Print or save all filtered invoices as PDF"
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-blue-200 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <HiOutlineDownload className="w-3.5 h-3.5" />
+                                    {batchAction === 'pdf' ? 'Loading...' : 'PDF All'}
+                                </button>
+                                <button
+                                    onClick={() => openBatchInvoices('print')}
+                                    disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
+                                    title="Print all filtered invoices"
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-200 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <HiOutlinePrinter className="w-3.5 h-3.5" />
+                                    {batchAction === 'print' ? 'Loading...' : 'Print All'}
+                                </button>
+                                <button
+                                    onClick={clearFilters}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-red-500 hover:text-red-700 hover:bg-red-50 font-medium transition-colors"
+                                >
+                                    <HiOutlineX className="w-3.5 h-3.5" />
+                                    Clear filters
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -725,7 +1528,9 @@ const Invoices = () => {
                                     <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Paid</th>
                                     <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Due</th>
                                     <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                                    <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                                    {showRowActions && (
+                                        <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
@@ -741,8 +1546,10 @@ const Invoices = () => {
                                         </td>
                                         <td className="px-5 py-4">
                                             <div className="font-medium text-slate-800">{inv.customer?.name || '—'}</div>
-                                            {inv.customer?.phone && (
-                                                <div className="text-xs text-slate-400 mt-0.5">{inv.customer.phone}</div>
+                                            {(inv.customer?.phone || inv.customer?.customerId) && (
+                                                <div className="text-xs text-slate-400 mt-0.5">
+                                                    {[inv.customer?.phone, inv.customer?.customerId].filter(Boolean).join(' • ')}
+                                                </div>
                                             )}
                                         </td>
                                         <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
@@ -770,46 +1577,59 @@ const Invoices = () => {
                                         <td className="px-5 py-4 text-center">
                                             <StatusBadge status={inv.paymentStatus} />
                                         </td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex items-center justify-center gap-1">
-                                                <button
-                                                    onClick={() => viewInvoiceDetail(inv._id)}
-                                                    title="View Invoice"
-                                                    className="p-2 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-all"
-                                                >
-                                                    <HiOutlineEye className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    title="Download PDF"
-                                                    className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
-                                                    onClick={async () => {
-                                                        try {
-                                                            const res = await api.get(`/invoices/${inv._id}`);
-                                                            downloadPDF(res.data.data);
-                                                        } catch { toast.error('Failed to download'); }
-                                                    }}
-                                                >
-                                                    <HiOutlineDownload className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    title="Print Thermal Receipt"
-                                                    className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
-                                                    onClick={async () => {
-                                                        try {
-                                                            const res = await api.get(`/invoices/${inv._id}`);
-                                                            printInvoice(res.data.data, 'thermal');
-                                                        } catch { toast.error('Failed to print'); }
-                                                    }}
-                                                >
-                                                    <HiOutlinePrinter className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </td>
+                                        {showRowActions && (
+                                            <td className="px-5 py-4">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <button
+                                                        onClick={() => viewInvoiceDetail(inv._id)}
+                                                        title="View Invoice"
+                                                        className="p-2 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-all"
+                                                    >
+                                                        <HiOutlineEye className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        title="Download PDF"
+                                                        className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                                        onClick={async () => {
+                                                            try {
+                                                                const res = await api.get(`/invoices/${inv._id}`);
+                                                                downloadPDF(res.data.data);
+                                                            } catch { toast.error('Failed to download'); }
+                                                        }}
+                                                    >
+                                                        <HiOutlineDownload className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        title="Print Thermal Receipt"
+                                                        className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
+                                                        onClick={async () => {
+                                                            try {
+                                                                const res = await api.get(`/invoices/${inv._id}`);
+                                                                printInvoice(res.data.data, 'thermal');
+                                                            } catch { toast.error('Failed to print'); }
+                                                        }}
+                                                    >
+                                                        <HiOutlinePrinter className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
+                )}
+                
+                {/* Pagination */}
+                {!loading && filteredInvoices.length > 0 && (
+                    <Pagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        totalItems={totalItems}
+                        itemsPerPage={itemsPerPage}
+                        onPageChange={setCurrentPage}
+                    />
                 )}
             </div>
 

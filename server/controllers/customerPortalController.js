@@ -175,7 +175,21 @@ exports.getSummary = async (req, res, next) => {
 // @access  Private (Customer)
 exports.getServices = async (req, res, next) => {
     try {
-        const services = await Service.find({ isActive: true }).sort('serviceType name');
+        const filter = { isActive: true };
+
+        if (req.customer?.isPremium) {
+            filter.isCustomerSpecific = true;
+            filter.$or = [
+                { customer: req.customer._id },
+                { customerId: req.customer.customerId },
+                { customerPhone: req.customer.phone },
+            ];
+        } else {
+            filter.isCustomerSpecific = { $ne: true };
+        }
+
+        const services = await Service.find(filter).sort('serviceType name');
+
         res.status(200).json({ success: true, count: services.length, data: services });
     } catch (error) {
         next(error);
@@ -215,6 +229,29 @@ exports.createMyOrder = async (req, res, next) => {
                 const service = await Service.findById(item.serviceId);
                 if (!service) {
                     return res.status(404).json({ success: false, message: `Service not found: ${item.serviceId}` });
+                }
+                if (!service.isActive) {
+                    return res.status(400).json({ success: false, message: `Service is inactive: ${service.name}` });
+                }
+                if (req.customer.isPremium && !service.isCustomerSpecific) {
+                    return res.status(403).json({
+                        success: false,
+                        message: `Service "${service.name}" is not available for this premium customer`,
+                    });
+                }
+
+                if (service.isCustomerSpecific) {
+                    const belongsToCustomer =
+                        String(service.customer || '') === String(req.customer._id) ||
+                        service.customerId === req.customer.customerId ||
+                        service.customerPhone === req.customer.phone;
+
+                    if (!req.customer.isPremium || !belongsToCustomer) {
+                        return res.status(403).json({
+                            success: false,
+                            message: `Service "${service.name}" is not available for this customer`,
+                        });
+                    }
                 }
                 const quantity = Number(item.quantity) || 1;
                 const subtotal = service.pricePerUnit * quantity;

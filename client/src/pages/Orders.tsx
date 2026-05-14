@@ -4,6 +4,7 @@ import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../context/SettingsContext';
 import type { IOrder, OrderStatus } from '../types';
+import Pagination from '../components/Pagination';
 import {
     HiOutlineSearch,
     HiOutlinePlusCircle,
@@ -69,6 +70,12 @@ const Orders = () => {
     const navigate = useNavigate();
     const { currency } = useSettings();
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+    const itemsPerPage = 20;
+
     // Basic filters (sent to server)
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -97,18 +104,20 @@ const Orders = () => {
     const fetchOrders = useCallback(async () => {
         try {
             setLoading(true);
-            const params: Record<string, string> = {};
+            const params: Record<string, any> = { page: currentPage, limit: itemsPerPage };
             if (search) params.search = search;
             if (statusFilter) params.status = statusFilter;
 
             const res = await api.get('/orders', { params });
             setAllOrders(res.data.data);
+            setTotalPages(res.data.totalPages || 1);
+            setTotalItems(res.data.total || 0);
         } catch (err: any) {
             toast.error(err.response?.data?.message || 'Failed to fetch orders');
         } finally {
             setLoading(false);
         }
-    }, [search, statusFilter]);
+    }, [search, statusFilter, currentPage]);
 
     // ── Client-side filter (date + amount) applied on top of server results ──
     useEffect(() => {
@@ -145,14 +154,15 @@ const Orders = () => {
 
     // Debounced search → refetch server
     useEffect(() => {
+        setCurrentPage(1); // Reset to page 1 when search changes
         const t = setTimeout(() => fetchOrders(), 400);
         return () => clearTimeout(t);
     }, [search]);
 
-    // Instant refetch on status change
+    // Instant refetch on status change or page change
     useEffect(() => {
         fetchOrders();
-    }, [statusFilter]);
+    }, [statusFilter, currentPage]);
 
     // ── Handlers ─────────────────────────────────────────────────────────────
     const handlePreset = (preset: DatePreset) => {
@@ -402,64 +412,75 @@ const Orders = () => {
                 ) : orders.length === 0 ? (
                     <div className="text-center py-20 text-slate-500 text-sm">No orders found</div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead>
-                                <tr className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
-                                    <th className="px-5 py-3 text-left">Order ID</th>
-                                    <th className="px-5 py-3 text-left">Customer</th>
-                                    <th className="px-5 py-3 text-left">Items</th>
-                                    <th className="px-5 py-3 text-right">Amount</th>
-                                    <th className="px-5 py-3 text-center">Status</th>
-                                    <th className="px-5 py-3 text-left">Date</th>
-                                    <th className="px-5 py-3 text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {orders.map((o) => (
-                                    <tr key={o._id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                                        <td className="px-5 py-3.5">
-                                            <span className="text-sm font-medium text-cyan-600">{o.orderId}</span>
-                                        </td>
-                                        <td className="px-5 py-3.5">
-                                            <span className="text-sm text-slate-900">{o.customer?.name}</span>
-                                            <p className="text-xs text-slate-400">{o.customer?.customerId}</p>
-                                        </td>
-                                        <td className="px-5 py-3.5">
-                                            <span className="text-sm text-slate-600">{o.items?.length || 0} items</span>
-                                        </td>
-                                        <td className="px-5 py-3.5 text-right">
-                                            <span className="text-sm font-semibold text-slate-900">{currency}{o.totalAmount?.toLocaleString()}</span>
-                                        </td>
-                                        <td className="px-5 py-3.5 text-center">
-                                            <select
-                                                value={o.status}
-                                                onChange={(e) => updateStatus(o._id, e.target.value)}
-                                                className={`px-2.5 py-1 rounded-lg text-xs font-medium border capitalize cursor-pointer focus:outline-none bg-transparent ${statusColors[o.status] || ''}`}
-                                            >
-                                                {allStatuses.map((s) => (
-                                                    <option key={s} value={s} className="bg-white text-slate-900">
-                                                        {s.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </td>
-                                        <td className="px-5 py-3.5">
-                                            <span className="text-sm text-slate-500">{new Date(o.createdAt).toLocaleDateString()}</span>
-                                        </td>
-                                        <td className="px-5 py-3.5 text-center">
-                                            <button
-                                                onClick={() => navigate(`/orders/${o._id}`)}
-                                                className="p-2 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors"
-                                            >
-                                                <HiOutlineEye className="w-4 h-4" />
-                                            </button>
-                                        </td>
+                    <>
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                                        <th className="px-5 py-3 text-left">Order ID</th>
+                                        <th className="px-5 py-3 text-left">Customer</th>
+                                        <th className="px-5 py-3 text-left">Items</th>
+                                        <th className="px-5 py-3 text-right">Amount</th>
+                                        <th className="px-5 py-3 text-center">Status</th>
+                                        <th className="px-5 py-3 text-left">Date</th>
+                                        <th className="px-5 py-3 text-center">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+                                <tbody>
+                                    {orders.map((o) => (
+                                        <tr key={o._id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                            <td className="px-5 py-3.5">
+                                                <span className="text-sm font-medium text-cyan-600">{o.orderId}</span>
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <span className="text-sm text-slate-900">{o.customer?.name}</span>
+                                                <p className="text-xs text-slate-400">{o.customer?.customerId}</p>
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <span className="text-sm text-slate-600">{o.items?.length || 0} items</span>
+                                            </td>
+                                            <td className="px-5 py-3.5 text-right">
+                                                <span className="text-sm font-semibold text-slate-900">{currency}{o.totalAmount?.toLocaleString()}</span>
+                                            </td>
+                                            <td className="px-5 py-3.5 text-center">
+                                                <select
+                                                    value={o.status}
+                                                    onChange={(e) => updateStatus(o._id, e.target.value)}
+                                                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border capitalize cursor-pointer focus:outline-none bg-transparent ${statusColors[o.status] || ''}`}
+                                                >
+                                                    {allStatuses.map((s) => (
+                                                        <option key={s} value={s} className="bg-white text-slate-900">
+                                                            {s.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </td>
+                                            <td className="px-5 py-3.5">
+                                                <span className="text-sm text-slate-500">{new Date(o.createdAt).toLocaleDateString()}</span>
+                                            </td>
+                                            <td className="px-5 py-3.5 text-center">
+                                                <button
+                                                    onClick={() => navigate(`/orders/${o._id}`)}
+                                                    className="p-2 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors"
+                                                >
+                                                    <HiOutlineEye className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        {/* Pagination */}
+                        <Pagination
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            totalItems={totalItems}
+                            itemsPerPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                        />
+                    </>
                 )}
             </div>
         </div>

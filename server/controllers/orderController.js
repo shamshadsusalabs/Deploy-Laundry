@@ -3,6 +3,7 @@ const Customer = require('../models/Customer');
 const Invoice = require('../models/Invoice');
 const Inventory = require('../models/Inventory');
 const Settings = require('../models/Settings');
+const Service = require('../models/Service');
 const { createNotification } = require('./notificationController');
 const ServiceTimerService = require('../utils/serviceTimerService');
 const RefundRecommenderService = require('../utils/refundRecommenderService');
@@ -29,6 +30,10 @@ exports.createOrder = async (req, res, next) => {
             return res.status(404).json({ success: false, message: 'Customer not found' });
         }
 
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ success: false, message: 'At least one item is required' });
+        }
+
         // Validate item types and item names
         const validItemTypes = ['Clothing', 'Linen', 'Accessories', 'Special_Items'];
         for (const item of items) {
@@ -41,6 +46,7 @@ exports.createOrder = async (req, res, next) => {
             }
 
             // Validate quantity
+            item.quantity = Number(item.quantity);
             if (!item.quantity || item.quantity <= 0) {
                 return res.status(400).json({
                     success: false,
@@ -48,18 +54,60 @@ exports.createOrder = async (req, res, next) => {
                 });
             }
 
+            if (item.service && item.serviceType !== 'manual') {
+                const service = await Service.findById(item.service);
+                if (!service) {
+                    return res.status(404).json({
+                        success: false,
+                        message: `Service not found: ${item.serviceName || item.service}`,
+                    });
+                }
+
+                if (!service.isActive) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Service "${service.name}" is inactive`,
+                    });
+                }
+
+                if (customer.isPremium && !service.isCustomerSpecific) {
+                    return res.status(403).json({
+                        success: false,
+                        message: `Service "${service.name}" is not available for this premium customer`,
+                    });
+                }
+
+                if (service.isCustomerSpecific) {
+                    const belongsToCustomer =
+                        String(service.customer || '') === String(customer._id) ||
+                        service.customerId === customer.customerId ||
+                        service.customerPhone === customer.phone;
+
+                    if (!customer.isPremium || !belongsToCustomer) {
+                        return res.status(403).json({
+                            success: false,
+                            message: `Service "${service.name}" is not available for this customer`,
+                        });
+                    }
+                }
+
+                item.serviceName = service.name;
+                item.serviceType = service.serviceType;
+                item.unit = service.unit;
+                item.pricePerUnit = service.pricePerUnit;
+                item.itemName = item.itemName || service.name;
+            }
+
             // Validate pricePerUnit
-            if (item.pricePerUnit === undefined || item.pricePerUnit < 0) {
+            item.pricePerUnit = Number(item.pricePerUnit);
+            if (Number.isNaN(item.pricePerUnit) || item.pricePerUnit < 0) {
                 return res.status(400).json({
                     success: false,
                     message: 'Item price per unit must be greater than or equal to zero',
                 });
             }
 
-            // Calculate subtotal if not provided
-            if (!item.subtotal) {
-                item.subtotal = item.quantity * item.pricePerUnit;
-            }
+            item.subtotal = item.quantity * item.pricePerUnit;
         }
 
         // Calculate totals - exclude manual items from billing
@@ -431,7 +479,6 @@ exports.bulkImportOrders = async (req, res, next) => {
         const multer = require('multer');
         const csv = require('csv-parser');
         const fs = require('fs');
-        const Service = require('../models/Service');
 
         // Configure multer for file upload
         const upload = multer({ dest: 'uploads/' });
@@ -516,7 +563,22 @@ exports.bulkImportOrders = async (req, res, next) => {
 
                             // Add services
                             for (const serviceData of orderData.services) {
-                                const service = await Service.findOne({ name: serviceData.serviceName });
+                                const serviceScope = customer.isPremium
+                                    ? [{
+                                        isCustomerSpecific: true,
+                                        $or: [
+                                            { customer: customer._id },
+                                            { customerId: customer.customerId },
+                                            { customerPhone: customer.phone },
+                                        ],
+                                    }]
+                                    : [{ isCustomerSpecific: { $ne: true } }];
+
+                                const service = await Service.findOne({
+                                    name: serviceData.serviceName,
+                                    isActive: true,
+                                    $or: serviceScope,
+                                });
                                 if (!service) {
                                     errors.push({ phone, serviceName: serviceData.serviceName, error: 'Service not found' });
                                     continue;
@@ -575,7 +637,7 @@ exports.bulkImportOrders = async (req, res, next) => {
                                 totalAmount,
                                 paidAmount: 0,
                                 balanceDue: totalAmount,
-                                status: 'pending',
+                                status: 'received',
                                 paymentStatus: 'unpaid',
                                 specialInstructions: orderData.specialInstructions,
                                 deliveryDate: orderData.deliveryDate || undefined,

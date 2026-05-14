@@ -64,6 +64,7 @@ exports.register = async (req, res, next) => {
                 email: customer.email,
                 address: customer.address,
                 customerType: customer.customerType,
+                isPremium: customer.isPremium,
             },
         });
     } catch (error) {
@@ -116,6 +117,7 @@ exports.login = async (req, res, next) => {
                 email: customer.email,
                 address: customer.address,
                 customerType: customer.customerType,
+                isPremium: customer.isPremium,
             },
         });
     } catch (error) {

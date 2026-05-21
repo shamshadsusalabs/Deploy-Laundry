@@ -4,8 +4,14 @@ const notificationSchema = new mongoose.Schema(
     {
         recipient: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
             required: true,
+            refPath: 'recipientModel',
+        },
+        recipientModel: {
+            type: String,
+            required: true,
+            enum: ['User', 'Customer'],
+            default: 'User',
         },
         type: {
             type: String,
@@ -18,6 +24,7 @@ const notificationSchema = new mongoose.Schema(
                 'low-stock',
                 'new-customer',
                 'system',
+                'invoice-reminder',
             ],
             required: true,
         },

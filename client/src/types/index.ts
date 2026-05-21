@@ -27,6 +27,8 @@ export interface ICustomer {
     isPremium?: boolean;
     outstandingBalance: number;
     creditBalance?: number; // NEW FIELD
+    notificationFrequency?: string;
+    lastNotificationSentAt?: string;
     createdAt: string;
     updatedAt: string;
 }

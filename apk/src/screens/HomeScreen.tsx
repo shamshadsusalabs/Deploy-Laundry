@@ -22,6 +22,7 @@ interface Summary {
     totalInvoices: number;
     unpaidBalance: number;
     recentOrders: any[];
+    unreadNotifications?: number;
 }
 
 const statusColors: Record<string, { bg: string; text: string; icon: string }> = {
@@ -89,12 +90,25 @@ export default function HomeScreen({ navigation }: any) {
                             <Text style={{ color: '#ffffff', fontSize: 22, fontWeight: '800' }}>Peninsula</Text>
                             <Text style={{ color: '#06b6d4', fontSize: 22, fontWeight: '800' }}>Laundries</Text>
                         </View>
-                        <TouchableOpacity 
-                            onPress={() => navigation.navigate('Profile')}
-                            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
-                        >
-                            <Text style={{ fontSize: 20 }}>👤</Text>
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', gap: 12 }}>
+                            <TouchableOpacity 
+                                onPress={() => navigation.navigate('Notifications')}
+                                style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', position: 'relative' }}
+                            >
+                                <Text style={{ fontSize: 20 }}>🔔</Text>
+                                {(summary?.unreadNotifications || 0) > 0 && (
+                                    <View style={{ position: 'absolute', top: -2, right: -2, backgroundColor: '#ef4444', borderRadius: 9, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+                                        <Text style={{ color: '#ffffff', fontSize: 9, fontWeight: '700' }}>{summary?.unreadNotifications}</Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                onPress={() => navigation.navigate('Profile')}
+                                style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
+                            >
+                                <Text style={{ fontSize: 20 }}>👤</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                     <View style={{ marginTop: 24 }}>
                         <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Welcome back,</Text>

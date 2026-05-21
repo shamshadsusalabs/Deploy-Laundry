@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../context/SettingsContext';
 import Pagination from '../components/Pagination';
+import * as XLSX from 'xlsx';
 import {
     HiOutlineFilter,
     HiOutlineDownload,
@@ -13,6 +15,8 @@ import {
     HiOutlineSearch,
     HiOutlineCalendar,
     HiOutlineChevronDown,
+    HiOutlineUpload,
+    HiOutlineTrash,
 } from 'react-icons/hi';
 
 type DatePreset = '' | '7d' | '15d' | '1m';
@@ -26,6 +30,9 @@ const toDateInputValue = (date: Date) => {
 };
 
 const Invoices = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const activeTab = searchParams.get('tab') || 'standard';
+
     const [invoices, setInvoices] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { currency } = useSettings();
@@ -46,6 +53,242 @@ const Invoices = () => {
     const [filterDateTo, setFilterDateTo] = useState('');
     const [filterDatePreset, setFilterDatePreset] = useState<DatePreset>('');
     const [showFilters, setShowFilters] = useState(false);
+
+    // ── Migrated Invoices States ──
+    const [migratedInvoices, setMigratedInvoices] = useState<any[]>([]);
+    const [migratedLoading, setMigratedLoading] = useState(false);
+    const [migratedSearch, setMigratedSearch] = useState('');
+    const [migratedPage, setMigratedPage] = useState(1);
+    const [migratedTotalPages, setMigratedTotalPages] = useState(1);
+    const [migratedTotalItems, setMigratedTotalItems] = useState(0);
+    const [viewMigratedInvoice, setViewMigratedInvoice] = useState<any>(null);
+
+    const fetchMigratedInvoices = async () => {
+        try {
+            setMigratedLoading(true);
+            const params = {
+                page: migratedPage,
+                limit: itemsPerPage,
+                search: migratedSearch || undefined,
+            };
+            const res = await api.get('/invoices/migrated', { params });
+            setMigratedInvoices(res.data.data);
+            setMigratedTotalPages(res.data.totalPages || 1);
+            setMigratedTotalItems(res.data.total || 0);
+        } catch (err) {
+            toast.error('Failed to fetch migrated invoices');
+        } finally {
+            setMigratedLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'migrated') {
+            fetchMigratedInvoices();
+        }
+    }, [activeTab, migratedPage, migratedSearch]);
+
+    // CSV header mapping helper
+    const normalizeKey = (key: string) => key.replace(/^\*/, '').replace(/\s+/g, '').toLowerCase();
+
+    const mapRow = (row: any) => {
+        const mapped: any = {};
+        for (const key of Object.keys(row)) {
+            const norm = normalizeKey(key);
+            mapped[norm] = row[key];
+        }
+        return {
+            contactName: mapped['contactname'],
+            emailAddress: mapped['emailaddress'],
+            poAddressLine1: mapped['poaddressline1'],
+            poAddressLine2: mapped['poaddressline2'],
+            poAddressLine3: mapped['poaddressline3'],
+            poAddressLine4: mapped['poaddressline4'],
+            poCity: mapped['pocity'],
+            poRegion: mapped['poregion'],
+            poPostalCode: mapped['popostalcode'],
+            poCountry: mapped['pocountry'],
+            invoiceNumber: mapped['invoicenumber']?.toString(),
+            reference: mapped['reference'],
+            invoiceDate: mapped['invoicedate'],
+            dueDate: mapped['duedate'],
+            inventoryItemCode: mapped['inventoryitemcode'],
+            description: mapped['description'],
+            quantity: mapped['quantity'],
+            unitAmount: mapped['unitamount'],
+            discount: mapped['discount'],
+            accountCode: mapped['accountcode'],
+            taxType: mapped['taxtype'],
+            trackingName1: mapped['trackingname1'],
+            trackingOption1: mapped['trackingoption1'],
+            trackingName2: mapped['trackingname2'],
+            trackingOption2: mapped['trackingoption2'],
+            currency: mapped['currency'],
+            brandingTheme: mapped['brandingtheme']
+        };
+    };
+
+    const parseImportDate = (val: any): Date | null => {
+        if (!val) return null;
+        if (val instanceof Date) return val;
+        if (typeof val === 'number') {
+            return new Date((val - 25569) * 86400 * 1000);
+        }
+        const date = new Date(val);
+        if (!isNaN(date.getTime())) return date;
+        
+        if (typeof val === 'string') {
+            const parts = val.split('/');
+            if (parts.length === 3) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const year = parseInt(parts[2], 10);
+                const customDate = new Date(year, month, day);
+                if (!isNaN(customDate.getTime())) return customDate;
+            }
+        }
+        return null;
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const rawData = XLSX.utils.sheet_to_json(ws);
+
+                if (rawData.length === 0) {
+                    toast.error("The file is empty.");
+                    return;
+                }
+
+                const invoicesMap: { [key: string]: any } = {};
+                let invalidRows = 0;
+
+                for (const row of rawData as any[]) {
+                    const mapped = mapRow(row);
+
+                    if (!mapped.invoiceNumber || !mapped.contactName || !mapped.invoiceDate || !mapped.dueDate) {
+                        invalidRows++;
+                        continue;
+                    }
+
+                    const invNum = mapped.invoiceNumber;
+                    const invoiceDate = parseImportDate(mapped.invoiceDate);
+                    const dueDate = parseImportDate(mapped.dueDate);
+
+                    if (!invoiceDate || !dueDate) {
+                        invalidRows++;
+                        continue;
+                    }
+
+                    const quantity = parseFloat(mapped.quantity) || 1;
+                    const unitAmount = parseFloat(mapped.unitAmount) || 0;
+                    const discount = parseFloat(mapped.discount) || 0;
+
+                    const lineItem = {
+                        inventoryItemCode: mapped.inventoryItemCode || '',
+                        description: mapped.description || 'No description',
+                        quantity,
+                        unitAmount,
+                        discount,
+                        accountCode: mapped.accountCode || '',
+                        taxType: mapped.taxType || '',
+                        trackingName1: mapped.trackingName1 || '',
+                        trackingOption1: mapped.trackingOption1 || '',
+                        trackingName2: mapped.trackingName2 || '',
+                        trackingOption2: mapped.trackingOption2 || '',
+                    };
+
+                    const lineAmount = (quantity * unitAmount) - discount;
+
+                    if (!invoicesMap[invNum]) {
+                        invoicesMap[invNum] = {
+                            invoiceNumber: invNum,
+                            contactName: mapped.contactName,
+                            emailAddress: mapped.emailAddress || '',
+                            poAddressLine1: mapped.poAddressLine1 || '',
+                            poAddressLine2: mapped.poAddressLine2 || '',
+                            poAddressLine3: mapped.poAddressLine3 || '',
+                            poAddressLine4: mapped.poAddressLine4 || '',
+                            poCity: mapped.poCity || '',
+                            poRegion: mapped.poRegion || '',
+                            poPostalCode: mapped.poPostalCode || '',
+                            poCountry: mapped.poCountry || '',
+                            reference: mapped.reference || '',
+                            invoiceDate,
+                            dueDate,
+                            currency: mapped.currency || 'AUD',
+                            brandingTheme: mapped.brandingTheme || '',
+                            lineItems: [lineItem],
+                            totalAmount: lineAmount,
+                        };
+                    } else {
+                        invoicesMap[invNum].lineItems.push(lineItem);
+                        invoicesMap[invNum].totalAmount += lineAmount;
+                    }
+                }
+
+                const invoicesToImport = Object.values(invoicesMap);
+                if (invoicesToImport.length === 0) {
+                    toast.error("No valid invoices found to import.");
+                    return;
+                }
+
+                const importPromise = api.post('/invoices/migrated/import', { invoices: invoicesToImport });
+                await toast.promise(importPromise, {
+                    loading: 'Importing invoices...',
+                    success: (res: any) => {
+                        fetchMigratedInvoices();
+                        return res.data.message || `Successfully imported invoices!`;
+                    },
+                    error: 'Failed to import invoices.'
+                });
+
+                if (invalidRows > 0) {
+                    toast(`${invalidRows} rows had missing or invalid required columns and were skipped.`, { icon: '⚠️' });
+                }
+
+            } catch (err: any) {
+                toast.error(`Error reading file: ${err.message || err}`);
+            }
+        };
+        reader.readAsBinaryString(file);
+        e.target.value = '';
+    };
+
+    const handleClearMigrated = async () => {
+        if (!window.confirm("Are you sure you want to delete all migrated invoices? This action cannot be undone.")) {
+            return;
+        }
+
+        try {
+            await api.delete('/invoices/migrated');
+            toast.success("All migrated invoices cleared successfully.");
+            fetchMigratedInvoices();
+        } catch (err) {
+            toast.error("Failed to clear migrated invoices.");
+        }
+    };
+
+    const downloadTemplate = () => {
+        const headers = "*ContactName,EmailAddress,POAddressLine1,POAddressLine2,POAddressLine3,POAddressLine4,POCity,PORegion,POPostalCode,POCountry,*InvoiceNumber,Reference,*InvoiceDate,*DueDate,InventoryItemCode,*Description,*Quantity,*UnitAmount,Discount,*AccountCode,*TaxType,TrackingName1,TrackingOption1,TrackingName2,TrackingOption2,Currency,BrandingTheme";
+        const sampleRow = "John Doe,john@example.com,123 Main St,,,,Sydney,NSW,2000,Australia,INV-OLD-001,REF-100,2026-05-14,2026-06-14,ITEM-01,Dry Cleaning Service,2,30,0,400,GST,Region,East,,,AUD,Standard Theme";
+        const csvContent = "data:text/csv;charset=utf-8," + [headers, sampleRow].join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "SalesInvoiceTemplate.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     const fetchInvoices = async () => {
         try {
@@ -1317,321 +1560,531 @@ const Invoices = () => {
                         <HiOutlineDocumentText className="w-5 h-5 text-cyan-600" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold text-slate-900">Invoices</h1>
+                        <h1 className="text-xl font-bold text-slate-900">
+                            {activeTab === 'migrated' ? 'Migrate Invoices' : 'Invoices'}
+                        </h1>
                         <p className="text-xs text-slate-400 mt-0.5">
-                            {filteredInvoices.length} of {invoices.length} invoices
-                            {activeFilterCount > 0 && <span className="ml-1 text-cyan-500">(filtered)</span>}
+                            {activeTab === 'migrated' ? (
+                                `Showing ${migratedTotalItems} old ERP invoices`
+                            ) : (
+                                `${filteredInvoices.length} of ${invoices.length} invoices`
+                            )}
+                            {activeTab !== 'migrated' && activeFilterCount > 0 && (
+                                <span className="ml-1 text-cyan-500">(filtered)</span>
+                            )}
                         </p>
                     </div>
                 </div>
 
-                {/* Filter toggle button */}
+                {/* Filter toggle button (only for standard invoices) */}
+                {activeTab !== 'migrated' && (
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium shadow-sm transition-all ${
+                            showFilters || activeFilterCount > 0
+                                ? 'bg-cyan-500 text-white border-cyan-500 shadow-cyan-100'
+                                : 'bg-white text-slate-600 border-slate-200 hover:border-cyan-300'
+                        }`}
+                    >
+                        <HiOutlineFilter className="w-4 h-4" />
+                        Filters
+                        {activeFilterCount > 0 && (
+                            <span className="ml-0.5 w-5 h-5 rounded-full bg-white text-cyan-600 text-xs font-bold flex items-center justify-center">
+                                {activeFilterCount}
+                            </span>
+                        )}
+                        <HiOutlineChevronDown className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+                    </button>
+                )}
+            </div>
+
+            {/* ── TABS ── */}
+            <div className="flex border-b border-slate-200 gap-6">
                 <button
-                    onClick={() => setShowFilters(!showFilters)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium shadow-sm transition-all ${
-                        showFilters || activeFilterCount > 0
-                            ? 'bg-cyan-500 text-white border-cyan-500 shadow-cyan-100'
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-cyan-300'
+                    onClick={() => setSearchParams({})}
+                    className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+                        activeTab !== 'migrated'
+                            ? 'border-cyan-500 text-cyan-600'
+                            : 'border-transparent text-slate-400 hover:text-slate-700'
                     }`}
                 >
-                    <HiOutlineFilter className="w-4 h-4" />
-                    Filters
-                    {activeFilterCount > 0 && (
-                        <span className="ml-0.5 w-5 h-5 rounded-full bg-white text-cyan-600 text-xs font-bold flex items-center justify-center">
-                            {activeFilterCount}
-                        </span>
-                    )}
-                    <HiOutlineChevronDown className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+                    Standard Invoices
+                </button>
+                <button
+                    onClick={() => setSearchParams({ tab: 'migrated' })}
+                    className={`pb-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+                        activeTab === 'migrated'
+                            ? 'border-cyan-500 text-cyan-600'
+                            : 'border-transparent text-slate-400 hover:text-slate-700'
+                    }`}
+                >
+                    Migrated Invoices
                 </button>
             </div>
 
-            {/* ── ADVANCED FILTER PANEL ── */}
-            {showFilters && (
-                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            {activeTab !== 'migrated' ? (
+                <>
+                    {/* ── ADVANCED FILTER PANEL ── */}
+                    {showFilters && (
+                        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
 
-                        {/* Customer Search */}
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Customer</label>
-                            <div className="relative">
-                                <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                                <input
-                                    type="text"
-                                    placeholder="Name, phone, or ID…"
-                                    value={filterCustomer}
-                                    onChange={(e) => setFilterCustomer(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent placeholder:text-slate-300"
-                                />
+                                {/* Customer Search */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Customer</label>
+                                    <div className="relative">
+                                        <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            placeholder="Name, phone, or ID…"
+                                            value={filterCustomer}
+                                            onChange={(e) => setFilterCustomer(e.target.value)}
+                                            className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent placeholder:text-slate-300"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Order / Invoice ID */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Order / Invoice ID</label>
+                                    <div className="relative">
+                                        <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            placeholder="ORD-001 or INV-001…"
+                                            value={filterOrderId}
+                                            onChange={(e) => setFilterOrderId(e.target.value)}
+                                            className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent placeholder:text-slate-300"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Quick Date Range */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Quick Range</label>
+                                    <div className="relative">
+                                        <HiOutlineCalendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                        <select
+                                            value={filterDatePreset}
+                                            onChange={(e) => applyDatePreset(e.target.value as DatePreset)}
+                                            className="w-full pl-8 pr-7 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent appearance-none cursor-pointer"
+                                        >
+                                            <option value="">Custom dates</option>
+                                            <option value="7d">Last 1 week</option>
+                                            <option value="15d">Last 15 days</option>
+                                            <option value="1m">Last 1 month</option>
+                                        </select>
+                                        <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                                    </div>
+                                </div>
+
+                                {/* Date From */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Date From</label>
+                                    <div className="relative">
+                                        <HiOutlineCalendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                        <input
+                                            type="date"
+                                            value={filterDateFrom}
+                                            onChange={(e) => {
+                                                setFilterDatePreset('');
+                                                setFilterDateFrom(e.target.value);
+                                            }}
+                                            className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Date To */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Date To</label>
+                                    <div className="relative">
+                                        <HiOutlineCalendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                        <input
+                                            type="date"
+                                            value={filterDateTo}
+                                            onChange={(e) => {
+                                                setFilterDatePreset('');
+                                                setFilterDateTo(e.target.value);
+                                            }}
+                                            className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Status */}
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Status</label>
+                                    <div className="relative">
+                                        <HiOutlineFilter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                        <select
+                                            value={filterStatus}
+                                            onChange={(e) => setFilterStatus(e.target.value)}
+                                            className="w-full pl-8 pr-7 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent appearance-none cursor-pointer"
+                                        >
+                                            <option value="">All Status</option>
+                                            <option value="unpaid">Unpaid</option>
+                                            <option value="partial">Partial</option>
+                                            <option value="paid">Paid</option>
+                                        </select>
+                                        <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Order / Invoice ID */}
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Order / Invoice ID</label>
-                            <div className="relative">
-                                <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                                <input
-                                    type="text"
-                                    placeholder="ORD-001 or INV-001…"
-                                    value={filterOrderId}
-                                    onChange={(e) => setFilterOrderId(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent placeholder:text-slate-300"
-                                />
+                            {/* Batch actions */}
+                            {hasActiveFilters && (
+                                <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                                    <p className="text-xs text-slate-400">
+                                        Showing <span className="font-semibold text-slate-700">{filteredInvoices.length}</span> of {invoices.length} invoices
+                                    </p>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                            onClick={() => openBatchInvoices('view')}
+                                            disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
+                                            title="View all filtered invoices"
+                                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:text-cyan-700 hover:border-cyan-200 hover:bg-cyan-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <HiOutlineEye className="w-3.5 h-3.5" />
+                                            {batchAction === 'view' ? 'Loading...' : 'View All'}
+                                        </button>
+                                        <button
+                                            onClick={() => openBatchInvoices('pdf')}
+                                            disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
+                                            title="Print or save all filtered invoices as PDF"
+                                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-blue-200 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <HiOutlineDownload className="w-3.5 h-3.5" />
+                                            {batchAction === 'pdf' ? 'Loading...' : 'PDF All'}
+                                        </button>
+                                        <button
+                                            onClick={() => openBatchInvoices('print')}
+                                            disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
+                                            title="Print all filtered invoices"
+                                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-200 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <HiOutlinePrinter className="w-3.5 h-3.5" />
+                                            {batchAction === 'print' ? 'Loading...' : 'Print All'}
+                                        </button>
+                                        <button
+                                            onClick={clearFilters}
+                                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-red-500 hover:text-red-700 hover:bg-red-50 font-medium transition-colors"
+                                        >
+                                            <HiOutlineX className="w-3.5 h-3.5" />
+                                            Clear filters
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── TABLE CARD ── */}
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                        {loading ? (
+                            <div className="flex flex-col items-center justify-center py-24 gap-4">
+                                <div className="w-10 h-10 border-[3px] border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                                <p className="text-sm text-slate-400">Loading invoices…</p>
                             </div>
-                        </div>
-
-                        {/* Quick Date Range */}
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Quick Range</label>
-                            <div className="relative">
-                                <HiOutlineCalendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                                <select
-                                    value={filterDatePreset}
-                                    onChange={(e) => applyDatePreset(e.target.value as DatePreset)}
-                                    className="w-full pl-8 pr-7 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent appearance-none cursor-pointer"
-                                >
-                                    <option value="">Custom dates</option>
-                                    <option value="7d">Last 1 week</option>
-                                    <option value="15d">Last 15 days</option>
-                                    <option value="1m">Last 1 month</option>
-                                </select>
-                                <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-                            </div>
-                        </div>
-
-                        {/* Date From */}
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Date From</label>
-                            <div className="relative">
-                                <HiOutlineCalendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                                <input
-                                    type="date"
-                                    value={filterDateFrom}
-                                    onChange={(e) => {
-                                        setFilterDatePreset('');
-                                        setFilterDateFrom(e.target.value);
-                                    }}
-                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Date To */}
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Date To</label>
-                            <div className="relative">
-                                <HiOutlineCalendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                                <input
-                                    type="date"
-                                    value={filterDateTo}
-                                    onChange={(e) => {
-                                        setFilterDatePreset('');
-                                        setFilterDateTo(e.target.value);
-                                    }}
-                                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Status */}
-                        <div className="flex flex-col gap-1.5">
-                            <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Status</label>
-                            <div className="relative">
-                                <HiOutlineFilter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                                <select
-                                    value={filterStatus}
-                                    onChange={(e) => setFilterStatus(e.target.value)}
-                                    className="w-full pl-8 pr-7 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent appearance-none cursor-pointer"
-                                >
-                                    <option value="">All Status</option>
-                                    <option value="unpaid">Unpaid</option>
-                                    <option value="partial">Partial</option>
-                                    <option value="paid">Paid</option>
-                                </select>
-                                <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Batch actions */}
-                    {hasActiveFilters && (
-                        <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                            <p className="text-xs text-slate-400">
-                                Showing <span className="font-semibold text-slate-700">{filteredInvoices.length}</span> of {invoices.length} invoices
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                    onClick={() => openBatchInvoices('view')}
-                                    disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
-                                    title="View all filtered invoices"
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:text-cyan-700 hover:border-cyan-200 hover:bg-cyan-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    <HiOutlineEye className="w-3.5 h-3.5" />
-                                    {batchAction === 'view' ? 'Loading...' : 'View All'}
-                                </button>
-                                <button
-                                    onClick={() => openBatchInvoices('pdf')}
-                                    disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
-                                    title="Print or save all filtered invoices as PDF"
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-blue-200 text-xs font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    <HiOutlineDownload className="w-3.5 h-3.5" />
-                                    {batchAction === 'pdf' ? 'Loading...' : 'PDF All'}
-                                </button>
-                                <button
-                                    onClick={() => openBatchInvoices('print')}
-                                    disabled={filteredInvoices.length === 0 || Boolean(batchAction)}
-                                    title="Print all filtered invoices"
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-200 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    <HiOutlinePrinter className="w-3.5 h-3.5" />
-                                    {batchAction === 'print' ? 'Loading...' : 'Print All'}
-                                </button>
-                                <button
-                                    onClick={clearFilters}
-                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-red-500 hover:text-red-700 hover:bg-red-50 font-medium transition-colors"
-                                >
-                                    <HiOutlineX className="w-3.5 h-3.5" />
+                        ) : filteredInvoices.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+                                <HiOutlineDocumentText className="w-12 h-12 opacity-30" />
+                                <p className="text-sm font-medium">No invoices match your filters</p>
+                                <button onClick={clearFilters} className="text-xs text-cyan-500 hover:text-cyan-700 font-medium underline underline-offset-2">
                                     Clear filters
                                 </button>
                             </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-100">
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Invoice</th>
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Order</th>
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+                                            <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
+                                            <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Paid</th>
+                                            <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-550 uppercase tracking-wider">Due</th>
+                                            <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                                            {showRowActions && (
+                                                <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                                            )}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {filteredInvoices.map((inv) => (
+                                            <tr key={inv._id} className="hover:bg-slate-50/80 transition-colors group">
+                                                <td className="px-5 py-4">
+                                                    <span className="font-semibold text-cyan-600 group-hover:text-cyan-700 transition-colors">
+                                                        {inv.invoiceId}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-4 text-slate-500 font-mono text-xs">
+                                                    {inv.order?.orderId || '—'}
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <div className="font-medium text-slate-800">{inv.customer?.name || '—'}</div>
+                                                    {(inv.customer?.phone || inv.customer?.customerId) && (
+                                                        <div className="text-xs text-slate-400 mt-0.5">
+                                                            {[inv.customer?.phone, inv.customer?.customerId].filter(Boolean).join(' • ')}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
+                                                    {inv.createdAt
+                                                        ? new Date(inv.createdAt).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                                        : '—'}
+                                                </td>
+                                                <td className="px-5 py-4 text-right font-semibold text-slate-850">
+                                                    {currency}{inv.totalAmount?.toLocaleString()}
+                                                </td>
+                                                <td className="px-5 py-4 text-right font-medium text-emerald-600">
+                                                    {currency}{inv.paidAmount?.toLocaleString()}
+                                                </td>
+                                                <td className="px-5 py-4 text-right">
+                                                    {inv.balanceDue < 0 ? (
+                                                        <span className="font-semibold text-emerald-600">
+                                                            Refund {currency}{Math.abs(inv.balanceDue)?.toLocaleString()}
+                                                        </span>
+                                                    ) : (
+                                                        <span className={`font-semibold ${inv.balanceDue > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                                                            {currency}{inv.balanceDue?.toLocaleString()}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-5 py-4 text-center">
+                                                    <StatusBadge status={inv.paymentStatus} />
+                                                </td>
+                                                {showRowActions && (
+                                                    <td className="px-5 py-4">
+                                                        <div className="flex items-center justify-center gap-1">
+                                                            <button
+                                                                onClick={() => viewInvoiceDetail(inv._id)}
+                                                                title="View Invoice"
+                                                                className="p-2 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-all"
+                                                            >
+                                                                <HiOutlineEye className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                title="Download PDF"
+                                                                className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        const res = await api.get(`/invoices/${inv._id}`);
+                                                                        downloadPDF(res.data.data);
+                                                                    } catch { toast.error('Failed to download'); }
+                                                                }}
+                                                            >
+                                                                <HiOutlineDownload className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                title="Print Thermal Receipt"
+                                                                className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        const res = await api.get(`/invoices/${inv._id}`);
+                                                                        printInvoice(res.data.data, 'thermal');
+                                                                    } catch { toast.error('Failed to print'); }
+                                                                }}
+                                                            >
+                                                                <HiOutlinePrinter className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        
+                        {/* Pagination */}
+                        {!loading && filteredInvoices.length > 0 && (
+                            <Pagination
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                totalItems={totalItems}
+                                itemsPerPage={itemsPerPage}
+                                onPageChange={setCurrentPage}
+                            />
+                        )}
+                    </div>
+                </>
+            ) : (
+                <div className="space-y-6">
+                    {/* ── MIGRATION AREA: Import & Description ── */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* File Drop/Upload Zone */}
+                        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between">
+                            <div>
+                                <h2 className="text-base font-bold text-slate-800 mb-2">Import Old ERP Invoices</h2>
+                                <p className="text-xs text-slate-400 leading-relaxed mb-6">
+                                    Upload a CSV or Excel spreadsheet containing your old invoices. The system will parse the records, group them by Invoice Number, and save them as migrated history.
+                                </p>
+                            </div>
+                            
+                            <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 hover:border-cyan-400 rounded-xl p-8 bg-slate-50 hover:bg-cyan-50/20 transition-all group relative cursor-pointer">
+                                <input
+                                    type="file"
+                                    accept=".csv,.xlsx,.xls"
+                                    onChange={handleFileUpload}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                />
+                                <HiOutlineUpload className="w-10 h-10 text-slate-400 group-hover:text-cyan-500 mb-3 transition-colors" />
+                                <p className="text-sm font-semibold text-slate-700 group-hover:text-cyan-600 transition-colors">
+                                    Click or drag your CSV/Excel file here to upload
+                                </p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Supports .csv, .xlsx, .xls formats up to 10MB
+                                </p>
+                            </div>
                         </div>
-                    )}
-                </div>
-            )}
 
-            {/* ── TABLE CARD ── */}
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                {loading ? (
-                    <div className="flex flex-col items-center justify-center py-24 gap-4">
-                        <div className="w-10 h-10 border-[3px] border-cyan-500 border-t-transparent rounded-full animate-spin" />
-                        <p className="text-sm text-slate-400">Loading invoices…</p>
+                        {/* Stats & Help */}
+                        <div className="bg-[#1c2a5e] text-white rounded-2xl shadow-lg p-6 flex flex-col justify-between">
+                            <div>
+                                <span className="text-[10px] text-blue-300 font-bold uppercase tracking-wider">Migration Helper</span>
+                                <h3 className="text-lg font-black mt-1 mb-3">Required Columns</h3>
+                                <p className="text-xs text-blue-200 leading-relaxed mb-4">
+                                    Make sure your spreadsheet contains the following mandatory fields:
+                                </p>
+                                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                                    {["ContactName", "InvoiceNumber", "InvoiceDate", "DueDate", "Description", "Quantity", "UnitAmount", "AccountCode", "TaxType"].map((col) => (
+                                        <span key={col} className="px-2 py-1 bg-white/10 rounded text-[10px] font-semibold text-white/95">
+                                            *{col}
+                                        </span>
+                                    ))}
+                                    {["EmailAddress", "POAddressLine1", "POCity", "PORegion", "POPostalCode", "POCountry", "Reference", "Currency", "BrandingTheme"].map((col) => (
+                                        <span key={col} className="px-2 py-1 bg-white/5 rounded text-[10px] font-medium text-white/60">
+                                            {col}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={downloadTemplate}
+                                className="mt-6 w-full flex items-center justify-center gap-2 bg-cyan-500 hover:bg-cyan-600 active:scale-95 text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-md transition-all cursor-pointer"
+                            >
+                                <HiOutlineDownload className="w-4 h-4" /> Download Sample CSV
+                            </button>
+                        </div>
                     </div>
-                ) : filteredInvoices.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
-                        <HiOutlineDocumentText className="w-12 h-12 opacity-30" />
-                        <p className="text-sm font-medium">No invoices match your filters</p>
-                        <button onClick={clearFilters} className="text-xs text-cyan-500 hover:text-cyan-700 font-medium underline underline-offset-2">
-                            Clear filters
-                        </button>
+
+                    {/* ── SEARCH & CLEAR BAR ── */}
+                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                        <div className="relative w-full sm:max-w-xs">
+                            <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Search old invoices..."
+                                value={migratedSearch}
+                                onChange={(e) => {
+                                    setMigratedSearch(e.target.value);
+                                    setMigratedPage(1);
+                                }}
+                                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent placeholder:text-slate-300"
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <span className="text-xs font-medium text-slate-400">
+                                Total Migrated: <span className="font-semibold text-slate-700">{migratedTotalItems}</span>
+                            </span>
+                            {migratedTotalItems > 0 && (
+                                <button
+                                    onClick={handleClearMigrated}
+                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-red-50 hover:bg-red-105 text-red-600 hover:text-red-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                                >
+                                    <HiOutlineTrash className="w-3.5 h-3.5" /> Clear All History
+                                </button>
+                            )}
+                        </div>
                     </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="bg-slate-50 border-b border-slate-100">
-                                    <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Invoice</th>
-                                    <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Order</th>
-                                    <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
-                                    <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
-                                    <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
-                                    <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Paid</th>
-                                    <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Due</th>
-                                    <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                                    {showRowActions && (
-                                        <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-                                    )}
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {filteredInvoices.map((inv) => (
-                                    <tr key={inv._id} className="hover:bg-slate-50/80 transition-colors group">
-                                        <td className="px-5 py-4">
-                                            <span className="font-semibold text-cyan-600 group-hover:text-cyan-700 transition-colors">
-                                                {inv.invoiceId}
-                                            </span>
-                                        </td>
-                                        <td className="px-5 py-4 text-slate-500 font-mono text-xs">
-                                            {inv.order?.orderId || '—'}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <div className="font-medium text-slate-800">{inv.customer?.name || '—'}</div>
-                                            {(inv.customer?.phone || inv.customer?.customerId) && (
-                                                <div className="text-xs text-slate-400 mt-0.5">
-                                                    {[inv.customer?.phone, inv.customer?.customerId].filter(Boolean).join(' • ')}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-5 py-4 text-slate-500 text-xs whitespace-nowrap">
-                                            {inv.createdAt
-                                                ? new Date(inv.createdAt).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                                                : '—'}
-                                        </td>
-                                        <td className="px-5 py-4 text-right font-semibold text-slate-800">
-                                            {currency}{inv.totalAmount?.toLocaleString()}
-                                        </td>
-                                        <td className="px-5 py-4 text-right font-medium text-emerald-600">
-                                            {currency}{inv.paidAmount?.toLocaleString()}
-                                        </td>
-                                        <td className="px-5 py-4 text-right">
-                                            {inv.balanceDue < 0 ? (
-                                                <span className="font-semibold text-emerald-600">
-                                                    Refund {currency}{Math.abs(inv.balanceDue)?.toLocaleString()}
-                                                </span>
-                                            ) : (
-                                                <span className={`font-semibold ${inv.balanceDue > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
-                                                    {currency}{inv.balanceDue?.toLocaleString()}
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-5 py-4 text-center">
-                                            <StatusBadge status={inv.paymentStatus} />
-                                        </td>
-                                        {showRowActions && (
-                                            <td className="px-5 py-4">
-                                                <div className="flex items-center justify-center gap-1">
+
+                    {/* ── TABLE CARD ── */}
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                        {migratedLoading ? (
+                            <div className="flex flex-col items-center justify-center py-24 gap-4">
+                                <div className="w-10 h-10 border-[3px] border-cyan-500 border-t-transparent rounded-full animate-spin" />
+                                <p className="text-sm text-slate-400">Loading old invoices…</p>
+                            </div>
+                        ) : migratedInvoices.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
+                                <HiOutlineDocumentText className="w-12 h-12 opacity-30" />
+                                <p className="text-sm font-medium">No migrated invoices found</p>
+                                <p className="text-xs text-slate-350">Upload a spreadsheet to import records</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-100">
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Invoice Number</th>
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Contact Name</th>
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Invoice Date</th>
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Due Date</th>
+                                            <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Reference</th>
+                                            <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Currency</th>
+                                            <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Amount</th>
+                                            <th className="px-5 py-3.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {migratedInvoices.map((inv) => (
+                                            <tr key={inv._id} className="hover:bg-slate-50/80 transition-colors group">
+                                                <td className="px-5 py-4 font-semibold text-cyan-600 group-hover:text-cyan-700 transition-colors">
+                                                    {inv.invoiceNumber}
+                                                </td>
+                                                <td className="px-5 py-4 font-medium text-slate-800">
+                                                    {inv.contactName}
+                                                </td>
+                                                <td className="px-5 py-4 text-slate-500 text-xs">
+                                                    {new Date(inv.invoiceDate).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                                </td>
+                                                <td className="px-5 py-4 text-slate-500 text-xs">
+                                                    {new Date(inv.dueDate).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                                </td>
+                                                <td className="px-5 py-4 text-slate-500 text-xs font-mono">
+                                                    {inv.reference || '—'}
+                                                </td>
+                                                <td className="px-5 py-4 text-center text-slate-600 font-bold text-xs uppercase">
+                                                    {inv.currency || 'AUD'}
+                                                </td>
+                                                <td className="px-5 py-4 text-right font-bold text-slate-850">
+                                                    {inv.currency || 'AUD'} ${inv.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-5 py-4 text-center">
                                                     <button
-                                                        onClick={() => viewInvoiceDetail(inv._id)}
-                                                        title="View Invoice"
-                                                        className="p-2 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-all"
+                                                        onClick={() => setViewMigratedInvoice(inv)}
+                                                        title="View Details"
+                                                        className="p-2 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-all cursor-pointer inline-flex"
                                                     >
                                                         <HiOutlineEye className="w-4 h-4" />
                                                     </button>
-                                                    <button
-                                                        title="Download PDF"
-                                                        className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
-                                                        onClick={async () => {
-                                                            try {
-                                                                const res = await api.get(`/invoices/${inv._id}`);
-                                                                downloadPDF(res.data.data);
-                                                            } catch { toast.error('Failed to download'); }
-                                                        }}
-                                                    >
-                                                        <HiOutlineDownload className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        title="Print Thermal Receipt"
-                                                        className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
-                                                        onClick={async () => {
-                                                            try {
-                                                                const res = await api.get(`/invoices/${inv._id}`);
-                                                                printInvoice(res.data.data, 'thermal');
-                                                            } catch { toast.error('Failed to print'); }
-                                                        }}
-                                                    >
-                                                        <HiOutlinePrinter className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {/* Pagination */}
+                        {!migratedLoading && migratedInvoices.length > 0 && (
+                            <Pagination
+                                currentPage={migratedPage}
+                                totalPages={migratedTotalPages}
+                                totalItems={migratedTotalItems}
+                                itemsPerPage={itemsPerPage}
+                                onPageChange={setMigratedPage}
+                            />
+                        )}
                     </div>
-                )}
-                
-                {/* Pagination */}
-                {!loading && filteredInvoices.length > 0 && (
-                    <Pagination
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        totalItems={totalItems}
-                        itemsPerPage={itemsPerPage}
-                        onPageChange={setCurrentPage}
-                    />
-                )}
-            </div>
+                </div>
+            )}
 
             {/* ── INVOICE DETAIL MODAL ── */}
             {viewInvoice && (
@@ -1970,6 +2423,144 @@ const Invoices = () => {
                                 </div>
                             </div>
 
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MIGRATED INVOICE DETAIL MODAL ── */}
+            {viewMigratedInvoice && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+                    onClick={(e) => { if (e.target === e.currentTarget) setViewMigratedInvoice(null); }}
+                >
+                    <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[95vh]">
+                        {/* Header */}
+                        <div className="flex-shrink-0 bg-[#1c2a5e] px-5 py-3.5 rounded-t-2xl flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <img src="/logo.jpeg" alt="Logo" className="h-8 w-auto object-contain rounded opacity-90" />
+                                <div>
+                                    <p className="text-white font-bold text-sm leading-tight">Peninsula Laundries</p>
+                                    <p className="text-blue-300 text-xs font-mono">Migrated • {viewMigratedInvoice.invoiceNumber}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setViewMigratedInvoice(null)}
+                                className="p-1.5 rounded-lg bg-white/10 hover:bg-red-500/60 text-white transition-all cursor-pointer"
+                                title="Close"
+                            >
+                                <HiOutlineX className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="overflow-y-auto flex-1 p-6 space-y-6">
+                            {/* Meta & Customer */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b border-slate-200">
+                                <div>
+                                    <span className="text-[9px] uppercase tracking-widest text-slate-400 font-semibold mb-1 block">Bill To</span>
+                                    <div className="font-bold text-slate-800 text-base mb-1">{viewMigratedInvoice.contactName}</div>
+                                    {viewMigratedInvoice.emailAddress && (
+                                        <p className="text-xs text-slate-500 mb-2">Email: {viewMigratedInvoice.emailAddress}</p>
+                                    )}
+                                    <div className="text-xs text-slate-500 leading-relaxed space-y-0.5">
+                                        {[
+                                            viewMigratedInvoice.poAddressLine1,
+                                            viewMigratedInvoice.poAddressLine2,
+                                            viewMigratedInvoice.poAddressLine3,
+                                            viewMigratedInvoice.poAddressLine4
+                                        ].filter(Boolean).map((line, idx) => (
+                                            <p key={idx}>{line}</p>
+                                        ))}
+                                        { (viewMigratedInvoice.poCity || viewMigratedInvoice.poRegion || viewMigratedInvoice.poPostalCode) && (
+                                            <p>
+                                                {[viewMigratedInvoice.poCity, viewMigratedInvoice.poRegion, viewMigratedInvoice.poPostalCode].filter(Boolean).join(', ')}
+                                            </p>
+                                        )}
+                                        {viewMigratedInvoice.poCountry && (
+                                            <p className="font-medium text-slate-650">{viewMigratedInvoice.poCountry}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-4 text-xs">
+                                    <div>
+                                        <p className="text-slate-400 uppercase tracking-wider font-semibold text-[9px] mb-0.5">Invoice Date</p>
+                                        <p className="font-bold text-slate-700">
+                                            {new Date(viewMigratedInvoice.invoiceDate).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400 uppercase tracking-wider font-semibold text-[9px] mb-0.5">Due Date</p>
+                                        <p className="font-bold text-slate-700">
+                                            {new Date(viewMigratedInvoice.dueDate).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400 uppercase tracking-wider font-semibold text-[9px] mb-0.5">Reference</p>
+                                        <p className="font-medium text-slate-700 font-mono">
+                                            {viewMigratedInvoice.reference || '—'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-400 uppercase tracking-wider font-semibold text-[9px] mb-0.5">Branding Theme</p>
+                                        <p className="font-medium text-slate-700">
+                                            {viewMigratedInvoice.brandingTheme || '—'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Line Items Table */}
+                            <div>
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-450 mb-3">Line Items</h4>
+                                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                                    <table className="w-full text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-200">
+                                                <th className="px-4 py-2.5 text-left font-semibold text-slate-500 uppercase tracking-wider">Item Code</th>
+                                                <th className="px-4 py-2.5 text-left font-semibold text-slate-500 uppercase tracking-wider">Description</th>
+                                                <th className="px-4 py-2.5 text-center font-semibold text-slate-500 uppercase tracking-wider">Qty</th>
+                                                <th className="px-4 py-2.5 text-right font-semibold text-slate-500 uppercase tracking-wider">Unit Amount</th>
+                                                <th className="px-4 py-2.5 text-right font-semibold text-slate-500 uppercase tracking-wider">Discount</th>
+                                                <th className="px-4 py-2.5 text-center font-semibold text-slate-500 uppercase tracking-wider">Account / Tax</th>
+                                                <th className="px-4 py-2.5 text-right font-semibold text-slate-500 uppercase tracking-wider">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {viewMigratedInvoice.lineItems?.map((item: any, idx: number) => {
+                                                const itemTotal = (item.quantity * item.unitAmount) - (item.discount || 0);
+                                                return (
+                                                    <tr key={idx} className="hover:bg-slate-50/50">
+                                                        <td className="px-4 py-3 font-mono text-slate-600">{item.inventoryItemCode || '—'}</td>
+                                                        <td className="px-4 py-3 font-medium text-slate-800">{item.description}</td>
+                                                        <td className="px-4 py-3 text-center text-slate-600">{item.quantity}</td>
+                                                        <td className="px-4 py-3 text-right text-slate-650">${item.unitAmount?.toFixed(2)}</td>
+                                                        <td className="px-4 py-3 text-right text-emerald-600">{item.discount > 0 ? `-$${item.discount.toFixed(2)}` : '—'}</td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <div className="text-[10px] text-slate-500 font-semibold">{item.accountCode}</div>
+                                                            <div className="text-[9px] text-slate-400">{item.taxType}</div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right font-bold text-slate-800">${itemTotal?.toFixed(2)}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* Total Summary */}
+                            <div className="flex justify-end pt-4 border-t border-slate-100">
+                                <div className="text-right space-y-1 md:w-80">
+                                    <div className="flex justify-between items-center bg-[#1c2a5e] text-white font-black text-sm px-4 py-2 rounded-xl">
+                                        <span>TOTAL ({viewMigratedInvoice.currency || 'AUD'})</span>
+                                        <span>
+                                            ${viewMigratedInvoice.totalAmount?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

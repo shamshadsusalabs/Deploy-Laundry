@@ -8,6 +8,9 @@ const {
     getSummary,
     getServices,
     createMyOrder,
+    getMyNotifications,
+    markMyNotificationAsRead,
+    markAllMyNotificationsAsRead,
 } = require('../controllers/customerPortalController');
 const { protectCustomer } = require('../middleware/customerAuth');
 
@@ -20,5 +23,10 @@ router.get('/orders/:id', getMyOrder);
 router.post('/orders', createMyOrder);
 router.get('/invoices', getMyInvoices);
 router.get('/invoices/:id', getMyInvoice);
+
+// Customer Notification Routes
+router.get('/notifications', getMyNotifications);
+router.patch('/notifications/read-all', markAllMyNotificationsAsRead);
+router.patch('/notifications/:id/read', markMyNotificationAsRead);
 
 module.exports = router;

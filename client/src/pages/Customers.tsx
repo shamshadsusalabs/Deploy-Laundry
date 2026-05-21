@@ -16,9 +16,15 @@ import {
 
 type CustomServiceForm = {
     _id?: string;
+    number: string;
+    linenGroup: string;
+    category: string;
     name: string;
     serviceType: string;
     description: string;
+    colors: string;
+    sizes: string;
+    weight: string;
     pricePerUnit: number;
     unit: string;
     isExpress: boolean;
@@ -34,15 +40,22 @@ type CustomerFormState = {
     customerType: string;
     isPremium: boolean;
     customServices: CustomServiceForm[];
+    notificationFrequency: string;
 };
 
 const serviceTypes = ['wash-fold', 'dry-cleaning', 'ironing', 'express', 'bulk-commercial'];
 const units = ['piece', 'kg', 'bundle'];
 
 const createEmptyCustomService = (): CustomServiceForm => ({
+    number: '',
+    linenGroup: '',
+    category: '',
     name: '',
     serviceType: 'wash-fold',
     description: '',
+    colors: '',
+    sizes: '',
+    weight: '',
     pricePerUnit: 0,
     unit: 'piece',
     isExpress: false,
@@ -58,13 +71,20 @@ const createEmptyForm = (): CustomerFormState => ({
     customerType: 'walk-in',
     isPremium: false,
     customServices: [],
+    notificationFrequency: 'none',
 });
 
 const mapCustomService = (service: any): CustomServiceForm => ({
     _id: service._id,
+    number: service.number || '',
+    linenGroup: service.linenGroup || '',
+    category: service.category || '',
     name: service.name || '',
     serviceType: service.serviceType || 'wash-fold',
     description: service.description || '',
+    colors: service.colors || '',
+    sizes: service.sizes || '',
+    weight: service.weight || '',
     pricePerUnit: Number(service.pricePerUnit) || 0,
     unit: service.unit || 'piece',
     isExpress: Boolean(service.isExpress),
@@ -131,6 +151,7 @@ const Customers = () => {
             customerType: c.customerType,
             isPremium: Boolean(c.isPremium),
             customServices: [],
+            notificationFrequency: c.notificationFrequency || 'none',
         });
         setShowModal(true);
 
@@ -145,6 +166,7 @@ const Customers = () => {
                 customerType: detail.customerType,
                 isPremium: Boolean(detail.isPremium),
                 customServices: (detail.customServices || []).map(mapCustomService),
+                notificationFrequency: detail.notificationFrequency || 'none',
             });
         } catch {
             // keep the list-row data if the detail request fails
@@ -376,6 +398,19 @@ const Customers = () => {
                                     <option value="corporate">Corporate</option>
                                 </select>
                             </div>
+                            <div>
+                                <label className="block text-sm text-slate-600 mb-1">Invoice Notification Reminder Frequency</label>
+                                <select value={form.notificationFrequency} onChange={(e) => setForm({ ...form, notificationFrequency: e.target.value })}
+                                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:border-cyan-500 appearance-none cursor-pointer">
+                                    <option value="none">No reminders</option>
+                                    <option value="1_day">Every 1 day</option>
+                                    <option value="3_days">Every 3 days</option>
+                                    <option value="5_days">Every 5 days</option>
+                                    <option value="1_week">Every 1 week</option>
+                                    <option value="15_days">Every 15 days</option>
+                                    <option value="1_month">Every 1 month</option>
+                                </select>
+                            </div>
                             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
                                 <label className="flex items-center gap-3 cursor-pointer">
                                     <input
@@ -405,7 +440,37 @@ const Customers = () => {
 
                                         {form.customServices.map((service, index) => (
                                             <div key={service._id || index} className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                    <div>
+                                                        <label className="block text-xs text-slate-500 mb-1">Number</label>
+                                                        <input
+                                                            type="text"
+                                                            value={service.number}
+                                                            onChange={(e) => updateCustomService(index, 'number', e.target.value)}
+                                                            placeholder="e.g. 3549"
+                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-slate-500 mb-1">Linen Group</label>
+                                                        <input
+                                                            type="text"
+                                                            value={service.linenGroup}
+                                                            onChange={(e) => updateCustomService(index, 'linenGroup', e.target.value)}
+                                                            placeholder="e.g. Linen"
+                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-slate-500 mb-1">Category</label>
+                                                        <input
+                                                            type="text"
+                                                            value={service.category}
+                                                            onChange={(e) => updateCustomService(index, 'category', e.target.value)}
+                                                            placeholder="e.g. Bed Linen"
+                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                        />
+                                                    </div>
                                                     <div>
                                                         <label className="block text-xs text-slate-500 mb-1">Service Name *</label>
                                                         <input
@@ -434,6 +499,7 @@ const Customers = () => {
                                                         <input
                                                             type="number"
                                                             min={0}
+                                                            step="any"
                                                             value={service.pricePerUnit}
                                                             onChange={(e) => updateCustomService(index, 'pricePerUnit', Number(e.target.value))}
                                                             className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
@@ -450,6 +516,36 @@ const Customers = () => {
                                                                 <option key={unit} value={unit}>{unit}</option>
                                                             ))}
                                                         </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-slate-500 mb-1">Colors</label>
+                                                        <input
+                                                            type="text"
+                                                            value={service.colors}
+                                                            onChange={(e) => updateCustomService(index, 'colors', e.target.value)}
+                                                            placeholder="e.g. White"
+                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-slate-500 mb-1">Sizes</label>
+                                                        <input
+                                                            type="text"
+                                                            value={service.sizes}
+                                                            onChange={(e) => updateCustomService(index, 'sizes', e.target.value)}
+                                                            placeholder="e.g. Queen"
+                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-slate-500 mb-1">Weight</label>
+                                                        <input
+                                                            type="text"
+                                                            value={service.weight}
+                                                            onChange={(e) => updateCustomService(index, 'weight', e.target.value)}
+                                                            placeholder="0"
+                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"
+                                                        />
                                                     </div>
                                                 </div>
                                                 <textarea

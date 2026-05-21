@@ -15,6 +15,7 @@ import InvoicesScreen from '../screens/InvoicesScreen';
 import InvoiceDetailScreen from '../screens/InvoiceDetailScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import CreateOrderScreen from '../screens/CreateOrderScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 
 const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
@@ -27,6 +28,7 @@ function HomeStackNavigator() {
         <HomeStack.Navigator screenOptions={{ headerShown: false }}>
             <HomeStack.Screen name="HomeMain" component={HomeScreen} />
             <HomeStack.Screen name="CreateOrder" component={CreateOrderScreen} />
+            <HomeStack.Screen name="Notifications" component={NotificationsScreen} />
         </HomeStack.Navigator>
     );
 }

@@ -365,6 +365,7 @@ const Orders = () => {
                                 <input
                                     type="number"
                                     min={0}
+                                    step="any"
                                     placeholder="0"
                                     value={amountMin}
                                     onChange={(e) => setAmountMin(e.target.value)}
@@ -383,6 +384,7 @@ const Orders = () => {
                                 <input
                                     type="number"
                                     min={0}
+                                    step="any"
                                     placeholder="∞"
                                     value={amountMax}
                                     onChange={(e) => setAmountMax(e.target.value)}

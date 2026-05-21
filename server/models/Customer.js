@@ -58,6 +58,14 @@ const customerSchema = new mongoose.Schema(
             default: 0,
             min: 0,
         },
+        notificationFrequency: {
+            type: String,
+            enum: ['none', '1_day', '3_days', '5_days', '1_week', '15_days', '1_month'],
+            default: 'none',
+        },
+        lastNotificationSentAt: {
+            type: Date,
+        },
     },
     { timestamps: true }
 );

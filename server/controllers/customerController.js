@@ -12,9 +12,15 @@ const normalizeCustomServices = (services = []) => {
         .filter((service) => service && service.name && service.name.trim())
         .map((service) => ({
             _id: service._id,
+            number: service.number ? String(service.number).trim() : '',
+            linenGroup: service.linenGroup ? String(service.linenGroup).trim() : '',
+            category: service.category ? String(service.category).trim() : '',
             name: service.name.trim(),
             serviceType: serviceTypes.includes(service.serviceType) ? service.serviceType : 'wash-fold',
             description: service.description ? service.description.trim() : '',
+            colors: service.colors ? String(service.colors).trim() : '',
+            sizes: service.sizes ? String(service.sizes).trim() : '',
+            weight: service.weight ? String(service.weight).trim() : '',
             pricePerUnit: Math.max(0, Number(service.pricePerUnit) || 0),
             unit: serviceUnits.includes(service.unit) ? service.unit : 'piece',
             isExpress: Boolean(service.isExpress),
@@ -38,9 +44,15 @@ const syncCustomerServices = async (customer, services = []) => {
 
     for (const service of normalizedServices) {
         const serviceData = {
+            number: service.number,
+            linenGroup: service.linenGroup,
+            category: service.category,
             name: service.name,
             serviceType: service.serviceType,
             description: service.description,
+            colors: service.colors,
+            sizes: service.sizes,
+            weight: service.weight,
             pricePerUnit: service.pricePerUnit,
             unit: service.unit,
             isExpress: service.isExpress,
@@ -156,8 +168,8 @@ exports.getCustomer = async (req, res, next) => {
 // @access  Private
 exports.createCustomer = async (req, res, next) => {
     try {
-        const { name, phone, email, address, customerType, isPremium = false, customServices = [] } = req.body;
-        const customer = await Customer.create({ name, phone, email, address, customerType, isPremium });
+        const { name, phone, email, address, customerType, isPremium = false, customServices = [], notificationFrequency = 'none' } = req.body;
+        const customer = await Customer.create({ name, phone, email, address, customerType, isPremium, notificationFrequency });
         const savedServices = await syncCustomerServices(customer, customServices);
 
         res.status(201).json({
@@ -174,9 +186,10 @@ exports.createCustomer = async (req, res, next) => {
 // @access  Private
 exports.updateCustomer = async (req, res, next) => {
     try {
-        const { name, phone, email, address, customerType, isPremium, customServices } = req.body;
+        const { name, phone, email, address, customerType, isPremium, customServices, notificationFrequency } = req.body;
         const updates = { name, phone, email, address, customerType };
         if (isPremium !== undefined) updates.isPremium = isPremium;
+        if (notificationFrequency !== undefined) updates.notificationFrequency = notificationFrequency;
 
         const customer = await Customer.findByIdAndUpdate(
             req.params.id,

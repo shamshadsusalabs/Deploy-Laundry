@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
     HiOutlineHome,
@@ -13,6 +13,7 @@ import {
     HiOutlineLogout,
     HiOutlineX,
     HiOutlineReceiptRefund,
+    HiOutlineUpload,
 } from 'react-icons/hi';
 
 import { HiOutlineCube, HiOutlineTruck } from 'react-icons/hi2';
@@ -25,6 +26,7 @@ interface SidebarProps {
 const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const handleLogout = () => {
         logout();
@@ -61,6 +63,12 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
             label: 'Invoices',
             icon: HiOutlineDocumentText,
             path: '/invoices',
+            roles: ['admin', 'manager', 'cashier'],
+        },
+        {
+            label: 'Migrate Invoices',
+            icon: HiOutlineUpload,
+            path: '/invoices?tab=migrated',
             roles: ['admin', 'manager', 'cashier'],
         },
         {
@@ -156,22 +164,27 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
 
                 {/* Navigation */}
                 <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto h-[calc(100%-200px)]">
-                    {filteredMenu.map((item) => (
-                        <NavLink
-                            key={item.path}
-                            to={item.path}
-                            onClick={onClose}
-                            className={({ isActive }) =>
-                                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${isActive
-                                    ? 'bg-cyan-50 text-cyan-600 border border-cyan-200'
-                                    : 'text-slate-500 hover:text-slate-900 hover:bg-white'
-                                }`
-                            }
-                        >
-                            <item.icon className="w-5 h-5 flex-shrink-0" />
-                            <span>{item.label}</span>
-                        </NavLink>
-                    ))}
+                    {filteredMenu.map((item) => {
+                        const isActive = item.path.includes('?')
+                            ? location.pathname + location.search === item.path
+                            : location.pathname === item.path && !location.search.includes('tab=migrated');
+                        return (
+                            <NavLink
+                                key={item.path}
+                                to={item.path}
+                                onClick={onClose}
+                                className={
+                                    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${isActive
+                                        ? 'bg-cyan-50 text-cyan-600 border border-cyan-200'
+                                        : 'text-slate-500 hover:text-slate-900 hover:bg-white'
+                                    }`
+                                }
+                            >
+                                <item.icon className="w-5 h-5 flex-shrink-0" />
+                                <span>{item.label}</span>
+                            </NavLink>
+                        );
+                    })}
                 </nav>
 
                 {/* Logout */}

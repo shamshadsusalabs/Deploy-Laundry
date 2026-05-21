@@ -2,6 +2,36 @@ const mongoose = require('mongoose');
 
 const serviceSchema = new mongoose.Schema(
     {
+        number: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+        linenGroup: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+        category: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+        colors: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+        sizes: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+        weight: {
+            type: String,
+            trim: true,
+            default: '',
+        },
         name: {
             type: String,
             required: [true, 'Service name is required'],

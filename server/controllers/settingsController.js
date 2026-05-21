@@ -69,6 +69,17 @@ exports.updateServicePricing = async (req, res, next) => {
 // @access  Private (Admin)
 exports.createService = async (req, res, next) => {
     try {
+        if (Array.isArray(req.body)) {
+            const mapped = req.body.map(item => ({
+                ...item,
+                isCustomerSpecific: false,
+                customer: null,
+                customerId: '',
+                customerPhone: '',
+            }));
+            const services = await Service.insertMany(mapped);
+            return res.status(201).json({ success: true, data: services });
+        }
         const service = await Service.create({
             ...req.body,
             isCustomerSpecific: false,

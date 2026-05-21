@@ -3,8 +3,8 @@ import axios from 'axios';
 const API_BASE_URL =
     import.meta.env.VITE_API_BASE_URL ||
     (import.meta.env.DEV
-        ? 'https://jspcorporationptyltd.ts.r.appspot.com/api'
-        : 'https://jspcorporationptyltd.ts.r.appspot.com/api');
+        ? 'http://localhost:5000/api'
+        : 'http://localhost:5000/api');
 
 const api = axios.create({
     baseURL: API_BASE_URL,

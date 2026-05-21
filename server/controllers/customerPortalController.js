@@ -4,6 +4,7 @@ const Payment = require('../models/Payment');
 const Delivery = require('../models/Delivery');
 const Service = require('../models/Service');
 const Settings = require('../models/Settings');
+const Notification = require('../models/Notification');
 const { createNotification } = require('./notificationController');
 
 // @desc    Get customer's orders
@@ -132,7 +133,7 @@ exports.getSummary = async (req, res, next) => {
     try {
         const customerId = req.customer._id;
 
-        const [totalOrders, activeOrders, completedOrders, totalInvoices] = await Promise.all([
+        const [totalOrders, activeOrders, completedOrders, totalInvoices, unreadNotifications] = await Promise.all([
             Order.countDocuments({ customer: customerId }),
             Order.countDocuments({
                 customer: customerId,
@@ -140,6 +141,7 @@ exports.getSummary = async (req, res, next) => {
             }),
             Order.countDocuments({ customer: customerId, status: 'delivered' }),
             Invoice.countDocuments({ customer: customerId }),
+            Notification.countDocuments({ recipient: customerId, recipientModel: 'Customer', isRead: false }),
         ]);
 
         // Unpaid balance
@@ -163,6 +165,7 @@ exports.getSummary = async (req, res, next) => {
                 totalInvoices,
                 unpaidBalance: unpaidAgg[0]?.total || 0,
                 recentOrders,
+                unreadNotifications,
             },
         });
     } catch (error) {
@@ -316,6 +319,73 @@ exports.createMyOrder = async (req, res, next) => {
             .populate('customer', 'customerId name phone');
 
         res.status(201).json({ success: true, data: populatedOrder });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Get customer's own notifications
+// @route   GET /api/customer-portal/notifications
+// @access  Private (Customer)
+exports.getMyNotifications = async (req, res, next) => {
+    try {
+        const { page = 1, limit = 20, unreadOnly } = req.query;
+        const filter = { recipient: req.customer._id, recipientModel: 'Customer' };
+        if (unreadOnly === 'true') filter.isRead = false;
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const [notifications, total, unreadCount] = await Promise.all([
+            Notification.find(filter)
+                .sort('-createdAt')
+                .skip(skip)
+                .limit(parseInt(limit))
+                .populate('relatedOrder', 'orderId status')
+                .populate('relatedCustomer', 'customerId name'),
+            Notification.countDocuments(filter),
+            Notification.countDocuments({ recipient: req.customer._id, recipientModel: 'Customer', isRead: false }),
+        ]);
+
+        res.status(200).json({
+            success: true,
+            count: notifications.length,
+            total,
+            unreadCount,
+            data: notifications,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Mark customer notification as read
+// @route   PATCH /api/customer-portal/notifications/:id/read
+// @access  Private (Customer)
+exports.markMyNotificationAsRead = async (req, res, next) => {
+    try {
+        const notification = await Notification.findOneAndUpdate(
+            { _id: req.params.id, recipient: req.customer._id, recipientModel: 'Customer' },
+            { isRead: true, readAt: new Date() },
+            { returnDocument: 'after' }
+        );
+        if (!notification) {
+            return res.status(404).json({ success: false, message: 'Notification not found' });
+        }
+        res.status(200).json({ success: true, data: notification });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Mark all customer notifications as read
+// @route   PATCH /api/customer-portal/notifications/read-all
+// @access  Private (Customer)
+exports.markAllMyNotificationsAsRead = async (req, res, next) => {
+    try {
+        await Notification.updateMany(
+            { recipient: req.customer._id, recipientModel: 'Customer', isRead: false },
+            { isRead: true, readAt: new Date() }
+        );
+        res.status(200).json({ success: true, message: 'All notifications marked as read' });
     } catch (error) {
         next(error);
     }

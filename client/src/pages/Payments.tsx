@@ -678,7 +678,8 @@ const PaymentModal = ({
                                 <input
                                     type="number"
                                     required
-                                    min={1}
+                                    min={0.01}
+                                    step="any"
                                     value={form.amount}
                                     onChange={(e) => setForm({ ...form, amount: e.target.value })}
                                     placeholder="0.00"

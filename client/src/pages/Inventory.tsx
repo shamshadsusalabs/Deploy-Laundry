@@ -245,13 +245,13 @@ const Inventory = () => {
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs text-slate-500 mb-1">Quantity</label>
-                                    <input type="number" required min={0} value={form.quantity}
+                                    <input type="number" required min={0} step="any" value={form.quantity}
                                         onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
                                         className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:border-cyan-500" />
                                 </div>
                                 <div>
                                     <label className="block text-xs text-slate-500 mb-1">Low Stock Threshold</label>
-                                    <input type="number" required min={0} value={form.threshold}
+                                    <input type="number" required min={0} step="any" value={form.threshold}
                                         onChange={(e) => setForm({ ...form, threshold: Number(e.target.value) })}
                                         className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:border-cyan-500" />
                                 </div>
@@ -279,7 +279,7 @@ const Inventory = () => {
                         </p>
                         <div className="mb-4">
                             <label className="block text-xs text-slate-500 mb-1">Add Quantity ({showRestock.unit})</label>
-                            <input type="number" min={1} value={restockQty || ''}
+                            <input type="number" min={0.01} step="any" value={restockQty || ''}
                                 onChange={(e) => setRestockQty(Number(e.target.value))}
                                 placeholder="Enter quantity to add"
                                 className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-500" />

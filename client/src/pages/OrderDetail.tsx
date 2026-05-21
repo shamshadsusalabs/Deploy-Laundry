@@ -727,7 +727,7 @@ const OrderDetail = () => {
                                                         type="number"
                                                         placeholder="Qty used"
                                                         min="0"
-                                                        step="0.1"
+                                                        step="any"
                                                         value={row.quantityUsed || ''}
                                                         onChange={(e) => updateInventoryRow(index, 'quantityUsed', parseFloat(e.target.value) || 0)}
                                                         className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"

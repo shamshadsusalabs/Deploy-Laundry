@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 import { useSettings } from '../context/SettingsContext';
 import {
     HiOutlineCog,
@@ -11,6 +12,40 @@ import {
 } from 'react-icons/hi';
 
 type Tab = 'business' | 'billing' | 'services';
+
+interface ServiceRow {
+    number: string;
+    linenGroup: string;
+    category: string;
+    name: string;
+    serviceType: string;
+    colors: string;
+    sizes: string;
+    weight: string;
+    pricePerUnit: number;
+    unit: string;
+    isExpress: boolean;
+    expressSurchargePercent: number;
+    isActive: boolean;
+    description: string;
+}
+
+const createEmptyServiceRow = (): ServiceRow => ({
+    number: '',
+    linenGroup: '',
+    category: '',
+    name: '',
+    serviceType: 'wash-fold',
+    colors: '',
+    sizes: '',
+    weight: '',
+    pricePerUnit: 0,
+    unit: 'piece',
+    isExpress: false,
+    expressSurchargePercent: 50,
+    isActive: true,
+    description: '',
+});
 
 const serviceTypes = ['wash-fold', 'dry-cleaning', 'ironing', 'express', 'bulk-commercial'];
 const units = ['kg', 'piece', 'bundle'];
@@ -26,10 +61,7 @@ const Settings = () => {
     // Service modal
     const [showServiceModal, setShowServiceModal] = useState(false);
     const [editService, setEditService] = useState<any>(null);
-    const [serviceForm, setServiceForm] = useState({
-        name: '', serviceType: 'wash-fold', pricePerUnit: 0, unit: 'kg', description: '', isActive: true,
-        isExpress: false, expressSurchargePercent: 50,
-    });
+    const [serviceRows, setServiceRows] = useState<ServiceRow[]>([createEmptyServiceRow()]);
 
     const fetchSettings = async () => {
         try {
@@ -67,29 +99,188 @@ const Settings = () => {
 
     const openServiceCreate = () => {
         setEditService(null);
-        setServiceForm({ name: '', serviceType: 'wash-fold', pricePerUnit: 0, unit: 'kg', description: '', isActive: true, isExpress: false, expressSurchargePercent: 50 });
+        setServiceRows([createEmptyServiceRow()]);
         setShowServiceModal(true);
     };
 
     const openServiceEdit = (s: any) => {
         setEditService(s);
-        setServiceForm({
-            name: s.name, serviceType: s.serviceType, pricePerUnit: s.pricePerUnit, unit: s.unit,
-            description: s.description || '', isActive: s.isActive, isExpress: s.isExpress || false,
+        setServiceRows([{
+            number: s.number || '',
+            linenGroup: s.linenGroup || '',
+            category: s.category || '',
+            name: s.name,
+            serviceType: s.serviceType,
+            colors: s.colors || '',
+            sizes: s.sizes || '',
+            weight: s.weight || '',
+            pricePerUnit: s.pricePerUnit,
+            unit: s.unit || 'piece',
+            isExpress: s.isExpress || false,
             expressSurchargePercent: s.expressSurchargePercent || 50,
-        });
+            isActive: s.isActive !== false,
+            description: s.description || '',
+        }]);
         setShowServiceModal(true);
+    };
+
+    const addServiceRow = () => {
+        setServiceRows([...serviceRows, createEmptyServiceRow()]);
+    };
+
+    const removeServiceRow = (index: number) => {
+        setServiceRows(serviceRows.filter((_, i) => i !== index));
+    };
+
+    const updateServiceRow = (index: number, field: keyof ServiceRow, value: any) => {
+        setServiceRows(serviceRows.map((row, i) => i === index ? { ...row, [field]: value } : row));
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const fileName = file.name.toLowerCase();
+        const reader = new FileReader();
+
+        reader.onload = (evt) => {
+            try {
+                let rows: any[] = [];
+                
+                if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                    const data = evt.target?.result;
+                    const workbook = XLSX.read(data, { type: 'binary' });
+                    const sheetName = workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+                    
+                    // Normalize keys to lowercase & trimmed
+                    rows = rawRows.map((r: any) => {
+                        const normalized: any = {};
+                        Object.keys(r).forEach(k => {
+                            normalized[k.trim().toLowerCase()] = r[k];
+                        });
+                        return normalized;
+                    });
+                } else {
+                    // Treat as text file (CSV, TSV, TXT)
+                    const rawText = evt.target?.result as string;
+                    const cleanText = rawText.replace(/^\uFEFF/, ''); // Strip BOM
+                    
+                    // Detect delimiter
+                    const detectDelimiter = (text: string): string => {
+                        const lines = text.slice(0, 1000).split('\n');
+                        let commas = 0, tabs = 0, semis = 0;
+                        lines.forEach(line => {
+                            commas += (line.match(/,/g) || []).length;
+                            tabs += (line.match(/\t/g) || []).length;
+                            semis += (line.match(/;/g) || []).length;
+                        });
+                        if (tabs > commas && tabs > semis) return '\t';
+                        if (semis > commas && semis > tabs) return ';';
+                        return ',';
+                    };
+
+                    const delimiter = detectDelimiter(cleanText);
+                    const lines = cleanText.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+                    
+                    if (lines.length >= 2) {
+                        const parseLine = (line: string): string[] => {
+                            const result: string[] = [];
+                            let current = '';
+                            let inQuotes = false;
+                            for (let i = 0; i < line.length; i++) {
+                                const char = line[i];
+                                if (char === '"') {
+                                    inQuotes = !inQuotes;
+                                } else if (char === delimiter && !inQuotes) {
+                                    result.push(current.trim());
+                                    current = '';
+                                } else {
+                                    current += char;
+                                }
+                            }
+                            result.push(current.trim());
+                            return result;
+                        };
+
+                        const headers = parseLine(lines[0]).map(h => h.toLowerCase().trim());
+                        for (let i = 1; i < lines.length; i++) {
+                            const cells = parseLine(lines[i]);
+                            const rowObj: any = {};
+                            headers.forEach((header, index) => {
+                                if (header) {
+                                    rowObj[header] = cells[index] || '';
+                                }
+                            });
+                            rows.push(rowObj);
+                        }
+                    }
+                }
+
+                // Map row data to ServiceRows
+                const parsedRows = rows.map((r: any) => {
+                    const numberVal = String(r['client number'] || r['number'] || r['ye number'] || r['yenumber'] || r['clientnumber'] || r['code'] || '').trim();
+                    const linenGroupVal = String(r['linen group'] || r['group'] || r['linengroup'] || '').trim();
+                    const categoryVal = String(r['category'] || '').trim();
+                    const nameVal = String(r['name'] || r['service name'] || '').trim();
+                    const colorsVal = String(r['colors'] || r['color'] || '0').trim();
+                    const sizesVal = String(r['sizes'] || r['size'] || '0').trim();
+                    const weightVal = String(r['weight'] || '0').trim();
+                    const priceVal = Number(r['price'] || r['price per unit'] || r['priceperunit'] || 0);
+
+                    return {
+                        number: numberVal,
+                        linenGroup: linenGroupVal,
+                        category: categoryVal,
+                        name: nameVal,
+                        serviceType: 'wash-fold',
+                        colors: colorsVal,
+                        sizes: sizesVal,
+                        weight: weightVal,
+                        pricePerUnit: priceVal,
+                        unit: 'piece',
+                        isExpress: false,
+                        expressSurchargePercent: 50,
+                        isActive: true,
+                        description: '',
+                    };
+                }).filter((r: any) => r.name);
+
+                if (parsedRows.length === 0) {
+                    toast.error('No services found in file or missing "Name" column');
+                    return;
+                }
+
+                setServiceRows(parsedRows);
+                toast.success(`Imported ${parsedRows.length} services from file! Review them in the table before saving.`);
+            } catch (err) {
+                toast.error('Failed to parse file. Make sure it is a valid Excel or CSV.');
+                console.error(err);
+            }
+        };
+
+        if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+            reader.readAsBinaryString(file);
+        } else {
+            reader.readAsText(file);
+        }
     };
 
     const handleServiceSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            const sanitizedRows = serviceRows.map(row => ({
+                ...row,
+                pricePerUnit: typeof row.pricePerUnit === 'number' && !isNaN(row.pricePerUnit) ? row.pricePerUnit : 0
+            }));
+
             if (editService) {
-                await api.put(`/settings/services/${editService._id}`, serviceForm);
+                await api.put(`/settings/services/${editService._id}`, sanitizedRows[0]);
                 toast.success('Service updated');
             } else {
-                await api.post('/settings/services', serviceForm);
-                toast.success('Service created');
+                await api.post('/settings/services', sanitizedRows);
+                toast.success('Services created');
             }
             setShowServiceModal(false);
             fetchServices();
@@ -247,17 +438,17 @@ const Settings = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-xs text-slate-500 mb-1">Default Tax %</label>
-                            <input type="number" min={0} max={100} value={settings.taxPercent ?? 5}
+                            <input type="number" min={0} max={100} step="any" value={settings.taxPercent ?? 5}
                                 onChange={(e) => setSettings({ ...settings, taxPercent: Number(e.target.value) })} className={inputClass} />
                         </div>
                         <div>
                             <label className="block text-xs text-slate-500 mb-1">Default Discount %</label>
-                            <input type="number" min={0} max={100} value={settings.defaultDiscountPercent ?? 0}
+                            <input type="number" min={0} max={100} step="any" value={settings.defaultDiscountPercent ?? 0}
                                 onChange={(e) => setSettings({ ...settings, defaultDiscountPercent: Number(e.target.value) })} className={inputClass} />
                         </div>
                         <div>
                             <label className="block text-xs text-slate-500 mb-1">Service Charge ({currency})</label>
-                            <input type="number" min={0} value={settings.defaultServiceCharge ?? 0}
+                            <input type="number" min={0} step="any" value={settings.defaultServiceCharge ?? 0}
                                 onChange={(e) => setSettings({ ...settings, defaultServiceCharge: Number(e.target.value) })} className={inputClass} />
                         </div>
                     </div>
@@ -327,12 +518,38 @@ const Settings = () => {
                                     </div>
                                 </div>
                                 <p className="text-xs text-slate-500 capitalize mb-2">{s.serviceType.replace('-', ' ')}</p>
-                                <div className="flex items-baseline gap-1">
+                                
+                                <div className="flex flex-wrap gap-1.5 mb-3">
+                                    {s.number && (
+                                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200/50 rounded-md text-[10px] font-semibold">
+                                            #{s.number}
+                                        </span>
+                                    )}
+                                    {s.linenGroup && (
+                                        <span className="px-2 py-0.5 bg-cyan-50/50 text-cyan-700 border border-cyan-100 rounded-md text-[10px] font-medium">
+                                            {s.linenGroup}
+                                        </span>
+                                    )}
+                                    {s.category && (
+                                        <span className="px-2 py-0.5 bg-purple-50/50 text-purple-700 border border-purple-100 rounded-md text-[10px] font-medium">
+                                            {s.category}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="flex items-baseline gap-1 mb-3">
                                     <span className="text-lg font-bold text-cyan-600">{currency}{s.pricePerUnit}</span>
                                     <span className="text-xs text-slate-500">/{s.unit}</span>
                                 </div>
+
+                                <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2.5 text-[10px] text-slate-500">
+                                    <div>Colors: <span className="font-semibold text-slate-700">{s.colors || '0'}</span></div>
+                                    <div>Sizes: <span className="font-semibold text-slate-700">{s.sizes || '0'}</span></div>
+                                    <div>Weight: <span className="font-semibold text-slate-700">{s.weight || '0'}</span></div>
+                                </div>
+
                                 {s.isExpress && (
-                                    <span className="inline-block mt-2 px-2 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/20 rounded-lg text-[10px] font-medium">
+                                    <span className="inline-block mt-2 px-2 py-0.5 bg-amber-500/15 text-amber-400 border border-amber-500/20 rounded-lg text-[10px] font-medium mr-2">
                                         ⚡ Express +{s.expressSurchargePercent}%
                                     </span>
                                 )}
@@ -350,56 +567,138 @@ const Settings = () => {
             {/* Service Modal */}
             {showServiceModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                    <div className="w-full max-w-md mx-4 bg-white border border-slate-200 rounded-2xl p-6 animate-fadeIn">
-                        <h3 className="text-lg font-semibold text-slate-900 mb-4">{editService ? 'Edit Service' : 'Add Service'}</h3>
-                        <form onSubmit={handleServiceSubmit} className="space-y-4">
-                            <input type="text" required placeholder="Service Name" value={serviceForm.name}
-                                onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })} className={inputClass} />
-                            <div className="grid grid-cols-2 gap-3">
-                                <select value={serviceForm.serviceType} onChange={(e) => setServiceForm({ ...serviceForm, serviceType: e.target.value })}
-                                    className={inputClass}>
-                                    {serviceTypes.map((t) => <option key={t} value={t}>{t.replace('-', ' ')}</option>)}
-                                </select>
-                                <select value={serviceForm.unit} onChange={(e) => setServiceForm({ ...serviceForm, unit: e.target.value })}
-                                    className={inputClass}>
-                                    {units.map((u) => <option key={u} value={u}>{u}</option>)}
-                                </select>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Price per Unit ({currency})</label>
-                                    <input type="number" required min={0} value={serviceForm.pricePerUnit}
-                                        onChange={(e) => setServiceForm({ ...serviceForm, pricePerUnit: Number(e.target.value) })} className={inputClass} />
-                                </div>
-                                <div className="flex items-end gap-3 pb-1">
-                                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                                        <input type="checkbox" checked={serviceForm.isActive}
-                                            onChange={(e) => setServiceForm({ ...serviceForm, isActive: e.target.checked })}
-                                            className="w-4 h-4 rounded accent-cyan-500" /> Active
+                    <div className="w-full max-w-[95vw] max-h-[90vh] overflow-y-auto mx-4 bg-white border border-slate-200 rounded-2xl p-6 animate-fadeIn flex flex-col">
+                        <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                            <h3 className="text-lg font-semibold text-slate-900">{editService ? 'Edit Service' : 'Add Services'}</h3>
+                            {!editService && (
+                                <div className="flex items-center gap-3">
+                                    <label className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+                                        <span>Import Excel/CSV</span>
+                                        <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
                                     </label>
-                                    <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                                        <input type="checkbox" checked={serviceForm.isExpress}
-                                            onChange={(e) => setServiceForm({ ...serviceForm, isExpress: e.target.checked })}
-                                            className="w-4 h-4 rounded accent-amber-500" /> Express
-                                    </label>
-                                </div>
-                            </div>
-                            {serviceForm.isExpress && (
-                                <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Express Surcharge %</label>
-                                    <input type="number" min={0} value={serviceForm.expressSurchargePercent}
-                                        onChange={(e) => setServiceForm({ ...serviceForm, expressSurchargePercent: Number(e.target.value) })} className={inputClass} />
+                                    <button type="button" onClick={addServiceRow}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-xs font-semibold rounded-lg hover:from-cyan-400 hover:to-blue-500 transition-all shadow-md">
+                                        <HiOutlinePlusCircle className="w-4 h-4" /> Add Row
+                                    </button>
                                 </div>
                             )}
-                            <textarea rows={2} placeholder="Description (optional)" value={serviceForm.description}
-                                onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })}
-                                className={`${inputClass} resize-none`} />
-                            <div className="flex gap-3">
+                        </div>
+                        <form onSubmit={handleServiceSubmit} className="space-y-4 flex-1 flex flex-col min-h-0">
+                            <div className="overflow-x-auto border border-slate-200 rounded-xl flex-1 min-h-0">
+                                <table className="w-full text-left border-collapse min-w-[1300px]">
+                                    <thead>
+                                        <tr className="bg-slate-50 text-xs font-semibold text-slate-600 border-b border-slate-200">
+                                            <th className="p-3 w-[100px]">Number</th>
+                                            <th className="p-3 w-[120px]">Linen Group</th>
+                                            <th className="p-3 w-[130px]">Category</th>
+                                            <th className="p-3 w-[200px]">Name *</th>
+                                            <th className="p-3 w-[150px]">Type</th>
+                                            <th className="p-3 w-[80px]">Colors</th>
+                                            <th className="p-3 w-[80px]">Sizes</th>
+                                            <th className="p-3 w-[80px]">Weight</th>
+                                            <th className="p-3 w-[120px]">Price *</th>
+                                            <th className="p-3 w-[100px]">Unit</th>
+                                            <th className="p-3 w-[80px] text-center">Express</th>
+                                            <th className="p-3 w-[100px]">Surcharge %</th>
+                                            <th className="p-3 w-[80px] text-center">Active</th>
+                                            <th className="p-3">Description</th>
+                                            {!editService && <th className="p-3 w-[60px] text-center">Action</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {serviceRows.map((row, index) => (
+                                            <tr key={index} className="hover:bg-slate-50/50">
+                                                <td className="p-2">
+                                                    <input type="text" placeholder="3549" value={row.number}
+                                                        onChange={(e) => updateServiceRow(index, 'number', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="text" placeholder="Linen" value={row.linenGroup}
+                                                        onChange={(e) => updateServiceRow(index, 'linenGroup', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="text" placeholder="Bed Linen" value={row.category}
+                                                        onChange={(e) => updateServiceRow(index, 'category', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="text" required placeholder="COG Blanket" value={row.name}
+                                                        onChange={(e) => updateServiceRow(index, 'name', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <select value={row.serviceType} onChange={(e) => updateServiceRow(index, 'serviceType', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500 appearance-none cursor-pointer">
+                                                        {serviceTypes.map((t) => <option key={t} value={t}>{t.replace('-', ' ')}</option>)}
+                                                    </select>
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="text" placeholder="0" value={row.colors}
+                                                        onChange={(e) => updateServiceRow(index, 'colors', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="text" placeholder="0" value={row.sizes}
+                                                        onChange={(e) => updateServiceRow(index, 'sizes', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="text" placeholder="0" value={row.weight}
+                                                        onChange={(e) => updateServiceRow(index, 'weight', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="number" min={0} step="any" placeholder="0.00" value={row.pricePerUnit || ''}
+                                                        onChange={(e) => updateServiceRow(index, 'pricePerUnit', e.target.value === '' ? 0 : Number(e.target.value))}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <select value={row.unit} onChange={(e) => updateServiceRow(index, 'unit', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500 appearance-none cursor-pointer">
+                                                        {units.map((u) => <option key={u} value={u}>{u}</option>)}
+                                                    </select>
+                                                </td>
+                                                <td className="p-2 text-center">
+                                                    <input type="checkbox" checked={row.isExpress}
+                                                        onChange={(e) => updateServiceRow(index, 'isExpress', e.target.checked)}
+                                                        className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 cursor-pointer" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="number" min={0} step="any" placeholder="50" disabled={!row.isExpress} value={row.expressSurchargePercent}
+                                                        onChange={(e) => updateServiceRow(index, 'expressSurchargePercent', Number(e.target.value))}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500 disabled:bg-slate-100 disabled:text-slate-400" />
+                                                </td>
+                                                <td className="p-2 text-center">
+                                                    <input type="checkbox" checked={row.isActive}
+                                                        onChange={(e) => updateServiceRow(index, 'isActive', e.target.checked)}
+                                                        className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 cursor-pointer" />
+                                                </td>
+                                                <td className="p-2">
+                                                    <input type="text" placeholder="Description (optional)" value={row.description}
+                                                        onChange={(e) => updateServiceRow(index, 'description', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-cyan-500" />
+                                                </td>
+                                                {!editService && (
+                                                    <td className="p-2 text-center">
+                                                        <button type="button" onClick={() => removeServiceRow(index)} disabled={serviceRows.length === 1}
+                                                            className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg disabled:opacity-30 transition-colors">
+                                                            <HiOutlineTrash className="w-4 h-4" />
+                                                        </button>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
                                 <button type="button" onClick={() => setShowServiceModal(false)}
-                                    className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-white">Cancel</button>
+                                    className="px-6 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
                                 <button type="submit"
-                                    className="flex-1 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-sm font-semibold rounded-xl hover:from-cyan-400 hover:to-blue-500">
-                                    {editService ? 'Update' : 'Create'}
+                                    className="px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-sm font-semibold rounded-xl hover:from-cyan-400 hover:to-blue-500 transition-all shadow-md">
+                                    {editService ? 'Update Service' : `Create ${serviceRows.length} Service(s)`}
                                 </button>
                             </div>
                         </form>

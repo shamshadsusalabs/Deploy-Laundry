@@ -450,6 +450,7 @@ const CreateOrder = () => {
                                                 <input
                                                     type="number"
                                                     min="1"
+                                                    step="any"
                                                     value={item.quantity}
                                                     onChange={(e) => updateManualItem(i, 'quantity', Number(e.target.value))}
                                                     className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-cyan-500"
@@ -460,7 +461,7 @@ const CreateOrder = () => {
                                                 <input
                                                     type="number"
                                                     min="0"
-                                                    step="0.01"
+                                                    step="any"
                                                     value={item.pricePerUnit}
                                                     onChange={(e) => updateManualItem(i, 'pricePerUnit', Number(e.target.value))}
                                                     className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-cyan-500"
@@ -501,7 +502,7 @@ const CreateOrder = () => {
                             </div>
                             <div>
                                 <label className="block text-sm text-slate-600 mb-1">Discount %</label>
-                                <input type="number" min={0} max={100} value={discountPercent} onChange={(e) => setDiscountPercent(Number(e.target.value))}
+                                <input type="number" min={0} max={100} step="any" value={discountPercent} onChange={(e) => setDiscountPercent(Number(e.target.value))}
                                     className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:border-cyan-500" />
                             </div>
                         </div>
@@ -747,6 +748,7 @@ const CreateOrder = () => {
                                                     <input
                                                         type="number"
                                                         min={0}
+                                                        step="any"
                                                         value={service.pricePerUnit}
                                                         onChange={(e) => updateQuickCustomService(index, 'pricePerUnit', Number(e.target.value))}
                                                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-cyan-500"

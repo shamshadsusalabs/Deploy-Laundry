@@ -230,6 +230,8 @@ const ProcessRefund = () => {
                             </label>
                             <input
                                 type="number"
+                                min={0}
+                                step="any"
                                 value={refundAmount}
                                 onChange={(e) => setRefundAmount(Number(e.target.value))}
                                 max={order.totalAmount}
@@ -373,7 +375,8 @@ const ProcessRefund = () => {
                                                             </label>
                                                             <input
                                                                 type="number"
-                                                                min="1"
+                                                                min="0.01"
+                                                                step="any"
                                                                 max={item.quantity}
                                                                 value={isSelected.damagedQuantity || 1}
                                                                 onChange={(e) => {
@@ -401,6 +404,8 @@ const ProcessRefund = () => {
                                                             </label>
                                                             <input
                                                                 type="number"
+                                                                min={0}
+                                                                step="any"
                                                                 max={item.subtotal}
                                                                 value={isSelected.refundAmount || 0}
                                                                 onChange={(e) => {

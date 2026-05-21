@@ -52,6 +52,10 @@ exports.getServices = async (req, res, next) => {
 // @access  Private/Admin
 exports.createService = async (req, res, next) => {
     try {
+        if (Array.isArray(req.body)) {
+            const services = await Service.insertMany(req.body);
+            return res.status(201).json({ success: true, data: services });
+        }
         const service = await Service.create(req.body);
         res.status(201).json({ success: true, data: service });
     } catch (error) {

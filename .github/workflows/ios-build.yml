@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: apk/package-lock.json
 
       - name: Install Node Dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1

@@ -13,6 +13,7 @@ import OrdersScreen from '../screens/OrdersScreen';
 import OrderDetailScreen from '../screens/OrderDetailScreen';
 import InvoicesScreen from '../screens/InvoicesScreen';
 import InvoiceDetailScreen from '../screens/InvoiceDetailScreen';
+import InvoicePreviewScreen from '../screens/InvoicePreviewScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import CreateOrderScreen from '../screens/CreateOrderScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
@@ -48,6 +49,7 @@ function InvoicesStackNavigator() {
         <InvoiceStack.Navigator screenOptions={{ headerShown: false }}>
             <InvoiceStack.Screen name="InvoicesList" component={InvoicesScreen} />
             <InvoiceStack.Screen name="InvoiceDetail" component={InvoiceDetailScreen} />
+            <InvoiceStack.Screen name="InvoicePreview" component={InvoicePreviewScreen} />
         </InvoiceStack.Navigator>
     );
 }

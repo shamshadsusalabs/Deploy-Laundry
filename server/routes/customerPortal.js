@@ -5,6 +5,7 @@ const {
     getMyOrder,
     getMyInvoices,
     getMyInvoice,
+    getFilteredInvoices,
     getSummary,
     getServices,
     createMyOrder,
@@ -22,6 +23,7 @@ router.get('/orders', getMyOrders);
 router.get('/orders/:id', getMyOrder);
 router.post('/orders', createMyOrder);
 router.get('/invoices', getMyInvoices);
+router.get('/invoices/filtered', getFilteredInvoices);
 router.get('/invoices/:id', getMyInvoice);
 
 // Customer Notification Routes

@@ -11,6 +11,7 @@ interface Customer {
     address?: string;
     customerType: string;
     isPremium?: boolean;
+    notificationFrequency?: string;
 }
 
 interface AuthContextType {

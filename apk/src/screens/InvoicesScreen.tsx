@@ -13,15 +13,31 @@ const psColors: Record<string, { bg: string; text: string; icon: string }> = {
 export default function InvoicesScreen({ navigation }: any) {
     const { currency } = useSettings();
     const [invoices, setInvoices] = useState<any[]>([]);
+    const [cycleData, setCycleData] = useState<{
+        frequency: string;
+        frequencyLabel: string;
+        startDate: string | null;
+        endDate: string | null;
+        invoices: any[];
+    } | null>(null);
+    const [activeTab, setActiveTab] = useState<'all' | 'cycle'>('all');
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
     const fetchData = async () => {
         try {
-            const res = await api.get('/customer-portal/invoices', { params: { limit: 50 } });
-            setInvoices(res.data.data);
-        } catch { }
-        finally { setLoading(false); setRefreshing(false); }
+            const [allRes, cycleRes] = await Promise.all([
+                api.get('/customer-portal/invoices', { params: { limit: 50 } }),
+                api.get('/customer-portal/invoices/filtered')
+            ]);
+            setInvoices(allRes.data.data);
+            setCycleData(cycleRes.data.data);
+        } catch (error) {
+            console.error('Error fetching invoices:', error);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
     };
 
     useFocusEffect(useCallback(() => { fetchData(); }, []));
@@ -34,47 +50,161 @@ export default function InvoicesScreen({ navigation }: any) {
         );
     }
 
+    const currentInvoicesList = activeTab === 'all' ? invoices : (cycleData?.invoices || []);
+
+    const handlePrintAll = () => {
+        if (currentInvoicesList.length === 0) return;
+        navigation.navigate('InvoicePreview', {
+            invoices: currentInvoicesList,
+            cycleLabel: activeTab === 'cycle' ? (cycleData?.frequencyLabel || 'Cycle') : 'All Invoices',
+            periodStart: activeTab === 'cycle' ? cycleData?.startDate : null,
+            periodEnd: activeTab === 'cycle' ? cycleData?.endDate : null,
+        });
+    };
+
     return (
         <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
             <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
-            <View style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 12, backgroundColor: '#0f172a' }}>
-                <Text style={{ fontSize: 26, fontWeight: '800', color: '#f1f5f9' }}>My Invoices</Text>
-                <Text style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>Track your laundry billing & payments</Text>
+            <View style={{ paddingHorizontal: 20, paddingTop: 56, paddingBottom: 12, backgroundColor: '#0f172a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={{ fontSize: 26, fontWeight: '800', color: '#f1f5f9' }}>My Invoices</Text>
+                    <Text style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>Track your laundry billing & payments</Text>
+                </View>
+                {currentInvoicesList.length > 0 && (
+                    <TouchableOpacity
+                        onPress={handlePrintAll}
+                        style={{
+                            backgroundColor: '#0e7490',
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                            borderRadius: 12,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6,
+                            marginTop: 4,
+                        }}
+                    >
+                        <Text style={{ fontSize: 14 }}>🖨️</Text>
+                        <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 12 }}>Print All</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
+
+            {/* Tabs Segmented Control */}
+            <View style={{ flexDirection: 'row', marginHorizontal: 20, marginBottom: 16, backgroundColor: '#1e293b', borderRadius: 14, padding: 4, borderWidth: 1, borderColor: '#334155' }}>
+                <TouchableOpacity
+                    onPress={() => setActiveTab('all')}
+                    style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        alignItems: 'center',
+                        backgroundColor: activeTab === 'all' ? '#06b6d4' : 'transparent',
+                        borderRadius: 10,
+                    }}
+                >
+                    <Text style={{ color: activeTab === 'all' ? '#ffffff' : '#94a3b8', fontSize: 13, fontWeight: '700' }}>
+                        All Invoices
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    onPress={() => setActiveTab('cycle')}
+                    style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        alignItems: 'center',
+                        backgroundColor: activeTab === 'cycle' ? '#06b6d4' : 'transparent',
+                        borderRadius: 10,
+                    }}
+                >
+                    <Text style={{ color: activeTab === 'cycle' ? '#ffffff' : '#94a3b8', fontSize: 13, fontWeight: '700' }}>
+                        {cycleData && cycleData.frequency !== 'none' ? cycleData.frequencyLabel : 'Cycle Invoices'}
+                    </Text>
+                </TouchableOpacity>
             </View>
 
             {/* Summary Banner */}
-            {invoices.length > 0 && (
+            {activeTab === 'all' ? (
+                invoices.length > 0 && (
+                    <View
+                        style={{
+                            marginHorizontal: 20,
+                            marginBottom: 20,
+                            padding: 20,
+                            borderRadius: 24,
+                            backgroundColor: '#1e293b',
+                            borderWidth: 1,
+                            borderColor: '#334155',
+                            flexDirection: 'row',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                        }}
+                    >
+                        <View>
+                            <Text style={{ color: '#64748b', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Total Balance</Text>
+                            <Text style={{ color: '#f1f5f9', fontSize: 24, fontWeight: '800', marginTop: 4 }}>
+                                {currency}{invoices.reduce((sum, i) => sum + (i.balanceDue || 0), 0)}
+                            </Text>
+                        </View>
+                        <View style={{ backgroundColor: 'rgba(6, 182, 212, 0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
+                            <Text style={{ color: '#06b6d4', fontSize: 13, fontWeight: '700' }}>
+                                {invoices.filter(i => (i.balanceDue || 0) > 0).length} Pending
+                            </Text>
+                        </View>
+                    </View>
+                )
+            ) : (
+                cycleData && cycleData.frequency !== 'none' && cycleData.invoices.length > 0 && (
+                    <View
+                        style={{
+                            marginHorizontal: 20,
+                            marginBottom: 20,
+                            padding: 20,
+                            borderRadius: 24,
+                            backgroundColor: '#111827',
+                            borderWidth: 1,
+                            borderColor: '#06b6d4',
+                            flexDirection: 'row',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                        }}
+                    >
+                        <View>
+                            <Text style={{ color: '#06b6d4', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>{cycleData.frequencyLabel} Total Due</Text>
+                            <Text style={{ color: '#f1f5f9', fontSize: 24, fontWeight: '800', marginTop: 4 }}>
+                                {currency}{cycleData.invoices.reduce((sum, i) => sum + (i.balanceDue || 0), 0)}
+                            </Text>
+                        </View>
+                        <View style={{ backgroundColor: 'rgba(6, 182, 212, 0.15)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
+                            <Text style={{ color: '#06b6d4', fontSize: 13, fontWeight: '700' }}>
+                                {cycleData.invoices.filter(i => (i.balanceDue || 0) > 0).length} Pending
+                            </Text>
+                        </View>
+                    </View>
+                )
+            )}
+
+            {/* Active Cycle Period Info */}
+            {activeTab === 'cycle' && cycleData && cycleData.frequency !== 'none' && cycleData.startDate && (
                 <View
                     style={{
                         marginHorizontal: 20,
-                        marginBottom: 20,
-                        padding: 20,
-                        borderRadius: 24,
+                        marginBottom: 16,
+                        padding: 14,
+                        borderRadius: 16,
                         backgroundColor: '#1e293b',
-                        borderWidth: 1,
-                        borderColor: '#334155',
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
+                        borderLeftWidth: 4,
+                        borderLeftColor: '#06b6d4',
                     }}
                 >
-                    <View>
-                        <Text style={{ color: '#64748b', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 }}>Total Balance</Text>
-                        <Text style={{ color: '#f1f5f9', fontSize: 24, fontWeight: '800', marginTop: 4 }}>
-                            {currency}{invoices.reduce((sum, i) => sum + (i.balanceDue || 0), 0)}
-                        </Text>
-                    </View>
-                    <View style={{ backgroundColor: 'rgba(6, 182, 212, 0.1)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 }}>
-                        <Text style={{ color: '#06b6d4', fontSize: 13, fontWeight: '700' }}>
-                            {invoices.filter(i => (i.balanceDue || 0) > 0).length} Pending
-                        </Text>
-                    </View>
+                    <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Active Cycle Duration</Text>
+                    <Text style={{ color: '#f1f5f9', fontSize: 13, fontWeight: '600', marginTop: 4 }}>
+                        {new Date(cycleData.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} - {new Date(cycleData.endDate || '').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </Text>
                 </View>
             )}
 
-
             <FlatList
-                data={invoices}
+                data={currentInvoicesList}
                 keyExtractor={(i) => i._id}
                 refreshControl={
                     <RefreshControl
@@ -86,10 +216,22 @@ export default function InvoicesScreen({ navigation }: any) {
                 }
                 contentContainerStyle={{ paddingTop: 8, paddingBottom: 20 }}
                 ListEmptyComponent={
-                    <View style={{ alignItems: 'center', paddingVertical: 64 }}>
-                        <Text style={{ fontSize: 40, marginBottom: 12 }}>🧾</Text>
-                        <Text style={{ color: '#64748b', fontSize: 15 }}>No invoices</Text>
-                    </View>
+                    activeTab === 'cycle' && cycleData?.frequency === 'none' ? (
+                        <View style={{ alignItems: 'center', paddingVertical: 40, marginHorizontal: 20, backgroundColor: '#1e293b', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: '#334155' }}>
+                            <Text style={{ fontSize: 44, marginBottom: 16 }}>🗓️</Text>
+                            <Text style={{ color: '#f1f5f9', fontSize: 16, fontWeight: '800', textAlign: 'center' }}>No Active Billing Cycle</Text>
+                            <Text style={{ color: '#64748b', fontSize: 13, textAlign: 'center', marginTop: 8, lineHeight: 18 }}>
+                                Your profile does not have a configured billing/reminder cycle. Please contact the store administrator to set your invoice reminder frequency.
+                            </Text>
+                        </View>
+                    ) : (
+                        <View style={{ alignItems: 'center', paddingVertical: 64 }}>
+                            <Text style={{ fontSize: 40, marginBottom: 12 }}>🧾</Text>
+                            <Text style={{ color: '#64748b', fontSize: 15 }}>
+                                {activeTab === 'all' ? 'No invoices' : `No invoices in this ${cycleData?.frequencyLabel || 'cycle'}`}
+                            </Text>
+                        </View>
+                    )
                 }
                 renderItem={({ item }) => {
                     const c = psColors[item.paymentStatus] || { bg: '#1e293b', text: '#94a3b8', icon: '📋' };
@@ -97,7 +239,7 @@ export default function InvoicesScreen({ navigation }: any) {
 
                     return (
                         <TouchableOpacity
-                            onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: item._id })}
+                            onPress={() => navigation.navigate('InvoiceDetail', { invoiceId: item._id, fromCycle: activeTab === 'cycle' })}
                             style={{
                                 backgroundColor: isUnpaid ? '#111827' : '#1e293b',
                                 borderRadius: 20,
@@ -159,7 +301,6 @@ export default function InvoicesScreen({ navigation }: any) {
                         </TouchableOpacity>
                     );
                 }}
-
             />
         </View>
     );

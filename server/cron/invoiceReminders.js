@@ -35,11 +35,10 @@ const sendInvoiceReminders = async () => {
                 continue;
             }
 
-            // Find unpaid/partially paid finalized invoices for this customer
+            // Find unpaid/partially paid invoices for this customer
             const unpaidInvoices = await Invoice.find({
                 customer: customer._id,
-                paymentStatus: { $in: ['unpaid', 'partial'] },
-                isFinalized: true
+                paymentStatus: { $in: ['unpaid', 'partial'] }
             });
 
             if (unpaidInvoices.length === 0) {

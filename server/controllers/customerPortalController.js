@@ -81,17 +81,42 @@ exports.getMyInvoices = async (req, res, next) => {
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const total = await Invoice.countDocuments(filter);
         const invoices = await Invoice.find(filter)
-            .populate('order', 'orderId status')
+            .populate({
+                path: 'order',
+                select: 'orderId status items totalAmount deliveryDate'
+            })
+            .populate('customer', 'customerId name phone email address customerType')
             .sort('-createdAt')
             .skip(skip)
             .limit(parseInt(limit));
+
+        let settings = await Settings.findById('global');
+        if (!settings) {
+            settings = await Settings.create({ _id: 'global' });
+        }
+
+        const data = invoices.map(inv => {
+            const obj = inv.toObject();
+            obj.business = {
+                name: settings.businessName,
+                companyName: settings.businessName,
+                phone: settings.businessPhone,
+                email: settings.businessEmail,
+                address: settings.businessAddress,
+                taxNumberLabel: settings.taxNumberLabel,
+                taxNumber: settings.taxNumber,
+                abn: settings.taxNumber,
+                currency: settings.currency,
+            };
+            return obj;
+        });
 
         res.status(200).json({
             success: true,
             count: invoices.length,
             total,
             totalPages: Math.ceil(total / parseInt(limit)),
-            data: invoices,
+            data,
         });
     } catch (error) {
         next(error);
@@ -108,8 +133,8 @@ exports.getMyInvoice = async (req, res, next) => {
             customer: req.customer._id,
         }).populate({
             path: 'order',
-            select: 'orderId status items totalAmount',
-        });
+            select: 'orderId status items totalAmount deliveryDate',
+        }).populate('customer', 'customerId name phone email address customerType');
 
         if (!invoice) {
             return res.status(404).json({ success: false, message: 'Invoice not found' });
@@ -117,9 +142,28 @@ exports.getMyInvoice = async (req, res, next) => {
 
         const payments = await Payment.find({ invoice: invoice._id }).sort('-createdAt');
 
+        let settings = await Settings.findById('global');
+        if (!settings) {
+            settings = await Settings.create({ _id: 'global' });
+        }
+
         res.status(200).json({
             success: true,
-            data: { ...invoice.toObject(), payments },
+            data: {
+                ...invoice.toObject(),
+                payments,
+                business: {
+                    name: settings.businessName,
+                    companyName: settings.businessName,
+                    phone: settings.businessPhone,
+                    email: settings.businessEmail,
+                    address: settings.businessAddress,
+                    taxNumberLabel: settings.taxNumberLabel,
+                    taxNumber: settings.taxNumber,
+                    abn: settings.taxNumber,
+                    currency: settings.currency,
+                }
+            },
         });
     } catch (error) {
         next(error);
@@ -315,6 +359,21 @@ exports.createMyOrder = async (req, res, next) => {
             relatedCustomer: req.customer._id,
         });
 
+        // Notify customer
+        try {
+            await Notification.create({
+                recipient: req.customer._id,
+                recipientModel: 'Customer',
+                type: 'order-created',
+                title: 'Order Placed Successfully',
+                message: `Your order ${order.orderId} has been created successfully. Total amount is $${totalAmount.toFixed(2)}.`,
+                relatedOrder: order._id,
+                relatedCustomer: req.customer._id,
+            });
+        } catch (err) {
+            console.error('Error creating customer order creation notification:', err);
+        }
+
         const populatedOrder = await Order.findById(order._id)
             .populate('customer', 'customerId name phone');
 
@@ -386,6 +445,130 @@ exports.markAllMyNotificationsAsRead = async (req, res, next) => {
             { isRead: true, readAt: new Date() }
         );
         res.status(200).json({ success: true, message: 'All notifications marked as read' });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Get customer's invoices filtered by their notification frequency
+// @route   GET /api/customer-portal/invoices/filtered
+// @access  Private (Customer)
+exports.getFilteredInvoices = async (req, res, next) => {
+    try {
+        const customer = req.customer;
+        const frequency = customer.notificationFrequency || 'none';
+        
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        let startDate = null;
+        let endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        let frequencyLabel = 'All Cycle';
+        
+        switch (frequency) {
+            case '1_day':
+                startDate = startOfToday;
+                frequencyLabel = 'Daily Cycle';
+                break;
+            case '3_days': {
+                const date = new Date(startOfToday);
+                date.setDate(date.getDate() - 2);
+                startDate = date;
+                frequencyLabel = '3-Day Cycle';
+                break;
+            }
+            case '5_days': {
+                const date = new Date(startOfToday);
+                date.setDate(date.getDate() - 4);
+                startDate = date;
+                frequencyLabel = '5-Day Cycle';
+                break;
+            }
+            case '1_week': {
+                const date = new Date(startOfToday);
+                const day = date.getDay(); // 0 is Sunday, 1 is Monday, etc.
+                const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Monday
+                startDate = new Date(date.setDate(diff));
+                
+                // End of this week (Sunday 23:59:59)
+                const endWeekDate = new Date(startDate);
+                endWeekDate.setDate(endWeekDate.getDate() + 6);
+                endDate = new Date(endWeekDate.getFullYear(), endWeekDate.getMonth(), endWeekDate.getDate(), 23, 59, 59, 999);
+                
+                frequencyLabel = 'Weekly Cycle';
+                break;
+            }
+            case '15_days': {
+                const date = new Date(startOfToday);
+                if (date.getDate() <= 15) {
+                    startDate = new Date(date.getFullYear(), date.getMonth(), 1);
+                    endDate = new Date(date.getFullYear(), date.getMonth(), 15, 23, 59, 59, 999);
+                } else {
+                    startDate = new Date(date.getFullYear(), date.getMonth(), 16);
+                    endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+                }
+                frequencyLabel = '15-Day Cycle';
+                break;
+            }
+            case '1_month': {
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                frequencyLabel = 'Monthly Cycle';
+                break;
+            }
+            case 'none':
+            default:
+                frequencyLabel = 'No Cycle Filter';
+                break;
+        }
+        
+        const filter = { customer: customer._id };
+        if (startDate) {
+            filter.createdAt = {
+                $gte: startDate,
+                $lte: endDate
+            };
+        }
+        
+        const invoices = await Invoice.find(filter)
+            .populate({
+                path: 'order',
+                select: 'orderId status items totalAmount deliveryDate'
+            })
+            .populate('customer', 'customerId name phone email address customerType')
+            .sort('-createdAt');
+
+        let settings = await Settings.findById('global');
+        if (!settings) {
+            settings = await Settings.create({ _id: 'global' });
+        }
+
+        const dataInvoices = invoices.map(inv => {
+            const obj = inv.toObject();
+            obj.business = {
+                name: settings.businessName,
+                companyName: settings.businessName,
+                phone: settings.businessPhone,
+                email: settings.businessEmail,
+                address: settings.businessAddress,
+                taxNumberLabel: settings.taxNumberLabel,
+                taxNumber: settings.taxNumber,
+                abn: settings.taxNumber,
+                currency: settings.currency,
+            };
+            return obj;
+        });
+            
+        res.status(200).json({
+            success: true,
+            data: {
+                frequency,
+                frequencyLabel,
+                startDate: startDate || null,
+                endDate: endDate || null,
+                invoices: dataInvoices
+            }
+        });
     } catch (error) {
         next(error);
     }

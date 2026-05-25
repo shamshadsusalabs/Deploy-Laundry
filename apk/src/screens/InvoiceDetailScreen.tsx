@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StatusBar } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StatusBar, Platform } from 'react-native';
 import api from '../services/api';
 import { useSettings } from '../context/SettingsContext';
 
 export default function InvoiceDetailScreen({ route, navigation }: any) {
-    const { invoiceId } = route.params;
+    const { invoiceId, fromCycle } = route.params || {};
     const { currency } = useSettings();
     const [invoice, setInvoice] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -222,7 +222,45 @@ export default function InvoiceDetailScreen({ route, navigation }: any) {
                     </View>
                 </View>
 
-                <View style={{ height: 32 }} />
+                {/* ── View / Download PDF ── */}
+                {!fromCycle && (
+                    <View
+                        style={{
+                            marginHorizontal: 20,
+                            marginTop: 10,
+                            marginBottom: 8,
+                        }}
+                    >
+                        <TouchableOpacity
+                            onPress={() =>
+                                navigation.navigate('InvoicePreview', { invoice })
+                            }
+                            style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 10,
+                                backgroundColor: '#0e7490',
+                                borderRadius: 16,
+                                paddingVertical: 16,
+                                borderWidth: 1,
+                                borderColor: '#06b6d4',
+                            }}
+                        >
+                            <Text style={{ fontSize: 20 }}>📄</Text>
+                            <View>
+                                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
+                                    View &amp; Download PDF
+                                </Text>
+                                <Text style={{ color: '#a5f3fc', fontSize: 11, marginTop: 1 }}>
+                                    Preview invoice · Share or Save
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                <View style={{ height: Platform.OS === 'ios' ? 32 : 20 }} />
 
             </ScrollView>
         </View>

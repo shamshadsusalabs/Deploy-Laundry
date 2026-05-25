@@ -5,6 +5,7 @@ const Inventory = require('../models/Inventory');
 const Settings = require('../models/Settings');
 const Service = require('../models/Service');
 const { createNotification } = require('./notificationController');
+const Notification = require('../models/Notification');
 const ServiceTimerService = require('../utils/serviceTimerService');
 const RefundRecommenderService = require('../utils/refundRecommenderService');
 
@@ -171,6 +172,21 @@ exports.createOrder = async (req, res, next) => {
             relatedOrder: order._id,
             relatedCustomer: customerId,
         });
+
+        // Notify customer
+        try {
+            await Notification.create({
+                recipient: customerId,
+                recipientModel: 'Customer',
+                type: 'order-created',
+                title: 'Order Placed Successfully',
+                message: `Your order ${order.orderId} has been created successfully. Total amount is $${order.totalAmount.toFixed(2)}.`,
+                relatedOrder: order._id,
+                relatedCustomer: customerId,
+            });
+        } catch (err) {
+            console.error('Error creating customer order creation notification:', err);
+        }
 
         res.status(201).json({
             success: true,
@@ -360,6 +376,21 @@ exports.updateOrderStatus = async (req, res, next) => {
                 message: `Order ${order.orderId} is now ${status}`,
                 relatedOrder: order._id,
             });
+
+            // Notify customer
+            try {
+                await Notification.create({
+                    recipient: order.customer._id,
+                    recipientModel: 'Customer',
+                    type: 'order-status-update',
+                    title: statusTitles[status],
+                    message: `Dear customer, your order ${order.orderId} is now ${status}.`,
+                    relatedOrder: order._id,
+                    relatedCustomer: order.customer._id,
+                });
+            } catch (err) {
+                console.error('Error creating customer order status update notification:', err);
+            }
         }
 
         res.status(200).json({ success: true, data: populatedOrder });

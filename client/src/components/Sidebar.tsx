@@ -14,6 +14,7 @@ import {
     HiOutlineX,
     HiOutlineReceiptRefund,
     HiOutlineUpload,
+    HiOutlineClipboardCheck,
 } from 'react-icons/hi';
 
 import { HiOutlineCube, HiOutlineTruck } from 'react-icons/hi2';
@@ -63,6 +64,12 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
             label: 'Invoices',
             icon: HiOutlineDocumentText,
             path: '/invoices',
+            roles: ['admin', 'manager', 'cashier'],
+        },
+        {
+            label: 'Invoice Approval',
+            icon: HiOutlineClipboardCheck,
+            path: '/invoices/approval',
             roles: ['admin', 'manager', 'cashier'],
         },
         {

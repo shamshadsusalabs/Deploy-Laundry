@@ -101,6 +101,9 @@ const Customers = () => {
     const [editingCustomer, setEditingCustomer] = useState<ICustomer | null>(null);
     const { currency } = useSettings();
     const [form, setForm] = useState<CustomerFormState>(createEmptyForm());
+    const [masterServices, setMasterServices] = useState<any[]>([]);
+    const [serviceSearchQuery, setServiceSearchQuery] = useState('');
+    const [showServiceDropdown, setShowServiceDropdown] = useState(false);
     
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -125,9 +128,22 @@ const Customers = () => {
         }
     };
 
+    const fetchMasterServices = async () => {
+        try {
+            const res = await api.get('/services');
+            setMasterServices(res.data.data || []);
+        } catch (err) {
+            console.error('Failed to fetch master services', err);
+        }
+    };
+
     useEffect(() => {
         fetchCustomers();
     }, [filterType, currentPage]);
+
+    useEffect(() => {
+        fetchMasterServices();
+    }, []);
 
     useEffect(() => {
         setCurrentPage(1); // Reset to page 1 when search changes
@@ -188,6 +204,86 @@ const Customers = () => {
             ...prev,
             customServices: [...prev.customServices, createEmptyCustomService()],
         }));
+    };
+
+    const assignMasterService = (serviceId: string) => {
+        if (!serviceId) return;
+        const service = masterServices.find((s) => s._id === serviceId);
+        if (!service) return;
+
+        const exists = form.customServices.some(
+            (s) => s.name.trim().toLowerCase() === service.name.trim().toLowerCase()
+        );
+        if (exists) {
+            toast.error(`"${service.name}" is already assigned to this customer.`);
+            return;
+        }
+
+        const newCustomService: CustomServiceForm = {
+            number: service.number || '',
+            linenGroup: service.linenGroup || '',
+            category: service.category || '',
+            name: service.name,
+            serviceType: service.serviceType,
+            description: service.description || '',
+            colors: service.colors || '',
+            sizes: service.sizes || '',
+            weight: service.weight || '',
+            pricePerUnit: service.pricePerUnit,
+            unit: service.unit,
+            isExpress: Boolean(service.isExpress),
+            expressSurchargePercent: service.expressSurchargePercent || 50,
+            isActive: true,
+        };
+
+        setForm((prev) => ({
+            ...prev,
+            customServices: [...prev.customServices, newCustomService],
+        }));
+        toast.success(`"${service.name}" assigned successfully!`);
+    };
+
+    const assignAllMasterServices = () => {
+        const toAdd: CustomServiceForm[] = [];
+        let skippedCount = 0;
+
+        for (const service of masterServices) {
+            const exists = form.customServices.some(
+                (s) => s.name.trim().toLowerCase() === service.name.trim().toLowerCase()
+            );
+            if (exists) {
+                skippedCount++;
+                continue;
+            }
+
+            toAdd.push({
+                number: service.number || '',
+                linenGroup: service.linenGroup || '',
+                category: service.category || '',
+                name: service.name,
+                serviceType: service.serviceType,
+                description: service.description || '',
+                colors: service.colors || '',
+                sizes: service.sizes || '',
+                weight: service.weight || '',
+                pricePerUnit: service.pricePerUnit,
+                unit: service.unit,
+                isExpress: Boolean(service.isExpress),
+                expressSurchargePercent: service.expressSurchargePercent || 50,
+                isActive: true,
+            });
+        }
+
+        if (toAdd.length === 0) {
+            toast.error('All master services are already assigned.');
+            return;
+        }
+
+        setForm((prev) => ({
+            ...prev,
+            customServices: [...prev.customServices, ...toAdd],
+        }));
+        toast.success(`Assigned ${toAdd.length} master services!${skippedCount > 0 ? ` (Skipped ${skippedCount} duplicates)` : ''}`);
     };
 
     const updateCustomService = (index: number, field: keyof CustomServiceForm, value: string | number | boolean) => {
@@ -346,7 +442,7 @@ const Customers = () => {
                                 </tbody>
                             </table>
                         </div>
-                        
+
                         {/* Pagination */}
                         <Pagination
                             currentPage={currentPage}
@@ -424,18 +520,81 @@ const Customers = () => {
 
                                 {form.isPremium && (
                                     <div className="space-y-3">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <p className="text-xs text-slate-500">
-                                                Custom services will be linked with this customer ID and phone number.
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200">
+                                            <p className="text-xs text-slate-500 max-w-sm">
+                                                Custom services will be linked with this customer. Assign master services or add blank ones.
                                             </p>
-                                            <button
-                                                type="button"
-                                                onClick={addCustomService}
-                                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500 text-white text-xs font-semibold hover:bg-cyan-600"
-                                            >
-                                                <HiOutlinePlusCircle className="w-4 h-4" />
-                                                Add Service
-                                            </button>
+                                            <div className="flex flex-wrap items-center gap-2 flex-1 justify-end">
+                                                <div className="relative flex-1 min-w-[200px] max-w-[280px]">
+                                                    <div className="relative">
+                                                        <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Search & Assign Master Service..."
+                                                            value={serviceSearchQuery}
+                                                            onChange={(e) => {
+                                                                setServiceSearchQuery(e.target.value);
+                                                                setShowServiceDropdown(true);
+                                                            }}
+                                                            onFocus={() => setShowServiceDropdown(true)}
+                                                            onBlur={() => setTimeout(() => setShowServiceDropdown(false), 200)}
+                                                            className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-500"
+                                                        />
+                                                        {serviceSearchQuery && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setServiceSearchQuery('')}
+                                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                            >
+                                                                <HiOutlineX className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    {showServiceDropdown && (
+                                                        <div className="absolute z-30 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                                                            {masterServices.filter(ms => ms.isActive && ms.name.toLowerCase().includes(serviceSearchQuery.toLowerCase())).length === 0 ? (
+                                                                <div className="p-3 text-xs text-slate-500 text-center">No services found</div>
+                                                            ) : (
+                                                                masterServices
+                                                                    .filter(ms => ms.isActive && ms.name.toLowerCase().includes(serviceSearchQuery.toLowerCase()))
+                                                                    .map((ms) => (
+                                                                        <button
+                                                                            key={ms._id}
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                assignMasterService(ms._id);
+                                                                                setServiceSearchQuery('');
+                                                                                setShowServiceDropdown(false);
+                                                                            }}
+                                                                            className="w-full px-3 py-2 text-left hover:bg-slate-50 flex justify-between items-center text-xs text-slate-700 transition-colors"
+                                                                        >
+                                                                            <span className="font-medium truncate mr-2">{ms.name}</span>
+                                                                            <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 shrink-0">
+                                                                                {currency}{ms.pricePerUnit}/{ms.unit}
+                                                                            </span>
+                                                                        </button>
+                                                                    ))
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={assignAllMasterServices}
+                                                    className="px-3 py-2 rounded-lg border border-cyan-500 text-cyan-600 bg-cyan-50 hover:bg-cyan-100 text-xs font-semibold"
+                                                >
+                                                    Assign All
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={addCustomService}
+                                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500 text-white text-xs font-semibold hover:bg-cyan-600"
+                                                >
+                                                    <HiOutlinePlusCircle className="w-4 h-4" />
+                                                    Add Blank
+                                                </button>
+                                            </div>
                                         </div>
 
                                         {form.customServices.map((service, index) => (

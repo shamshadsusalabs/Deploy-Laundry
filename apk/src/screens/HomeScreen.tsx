@@ -355,7 +355,7 @@ export default function HomeScreen({ navigation }: any) {
                                                     </Text>
                                                 </View>
                                                 <Text style={{ color: '#f1f5f9', fontWeight: '800', fontSize: 15, marginTop: 6 }}>
-                                                    {currency}{order.totalAmount}
+                                                    {currency}{Number(order.totalAmount || 0).toFixed(2)}
                                                 </Text>
                                             </View>
                                         </View>

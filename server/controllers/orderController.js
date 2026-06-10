@@ -145,6 +145,10 @@ exports.createOrder = async (req, res, next) => {
         });
 
         // Auto-create invoice
+        const isCycleCustomer = customer.notificationFrequency && customer.notificationFrequency !== 'none';
+        const isApproved = !isCycleCustomer;
+        const isGenerated = isCycleCustomer ? (creditApplied > 0) : true;
+
         const invoice = await Invoice.create({
             order: order._id,
             customer: customerId,
@@ -157,6 +161,8 @@ exports.createOrder = async (req, res, next) => {
             balanceDue: totalAmount,
             paymentStatus: creditApplied > 0 ? (totalAmount === 0 ? 'paid' : 'partial') : 'unpaid',
             createdBy: req.user._id,
+            isApproved,
+            isGenerated,
         });
 
         const populatedOrder = await Order.findById(order._id)
@@ -418,12 +424,56 @@ exports.updateOrder = async (req, res, next) => {
             });
         }
 
-        const updated = await Order.findByIdAndUpdate(req.params.id, req.body, {
-            returnDocument: 'after',
-            runValidators: true,
-        }).populate('customer', 'customerId name phone');
+        if (req.body.items) {
+            order.items = req.body.items;
+        }
+        if (req.body.deliveryDate !== undefined) {
+            order.deliveryDate = req.body.deliveryDate || undefined;
+        }
+        if (req.body.specialInstructions !== undefined) {
+            order.specialInstructions = req.body.specialInstructions;
+        }
+        if (req.body.taxPercent !== undefined) {
+            order.taxPercent = Number(req.body.taxPercent);
+        }
+        if (req.body.discountPercent !== undefined) {
+            order.discountPercent = Number(req.body.discountPercent);
+        }
+        if (req.body.serviceCharge !== undefined) {
+            order.serviceCharge = Number(req.body.serviceCharge);
+        }
 
-        res.status(200).json({ success: true, data: updated });
+        // Recalculate totals
+        for (const item of order.items) {
+            item.quantity = Number(item.quantity || 1);
+            item.pricePerUnit = Number(item.pricePerUnit || 0);
+            item.subtotal = item.quantity * item.pricePerUnit;
+        }
+        const billableItems = order.items.filter(item => item.serviceType !== 'manual');
+        order.subtotal = billableItems.reduce((sum, item) => sum + item.subtotal, 0);
+        order.taxAmount = (order.subtotal * order.taxPercent) / 100;
+        order.discountAmount = (order.subtotal * order.discountPercent) / 100;
+        order.totalAmount = order.subtotal + order.taxAmount - order.discountAmount + order.serviceCharge;
+
+        await order.save();
+
+        // Sync with invoice
+        if (invoice) {
+            invoice.subtotal = order.subtotal;
+            invoice.taxAmount = order.taxAmount;
+            invoice.discountAmount = order.discountAmount;
+            invoice.serviceCharge = order.serviceCharge;
+            invoice.totalAmount = order.totalAmount;
+            invoice.balanceDue = Math.max(0, order.totalAmount - (invoice.paidAmount || 0));
+            invoice.paymentStatus = (invoice.paidAmount || 0) >= order.totalAmount ? 'paid' : ((invoice.paidAmount || 0) > 0 ? 'partial' : 'unpaid');
+            await invoice.save();
+        }
+
+        const populated = await Order.findById(order._id)
+            .populate('customer', 'customerId name phone')
+            .populate('createdBy', 'name');
+
+        res.status(200).json({ success: true, data: populated });
     } catch (error) {
         next(error);
     }
@@ -444,7 +494,7 @@ exports.cancelOrder = async (req, res, next) => {
             status: 'cancelled',
             timestamp: new Date(),
             updatedBy: req.user._id,
-            note: req.body.reason || 'Order cancelled',
+            note: req.body?.reason || 'Order cancelled',
         });
         await order.save();
 
@@ -676,6 +726,7 @@ exports.bulkImportOrders = async (req, res, next) => {
                             });
 
                             // Create invoice
+                            const isCycleCustomer = customer.notificationFrequency && customer.notificationFrequency !== 'none';
                             await Invoice.create({
                                 order: order._id,
                                 customer: customer._id,
@@ -689,6 +740,8 @@ exports.bulkImportOrders = async (req, res, next) => {
                                 balanceDue: totalAmount,
                                 paymentStatus: 'unpaid',
                                 dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
+                                isApproved: !isCycleCustomer,
+                                isGenerated: !isCycleCustomer,
                             });
 
                             successCount++;

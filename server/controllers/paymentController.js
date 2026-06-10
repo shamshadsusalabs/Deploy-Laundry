@@ -1,6 +1,7 @@
 const Payment = require('../models/Payment');
 const Invoice = require('../models/Invoice');
 const Order = require('../models/Order');
+const Customer = require('../models/Customer');
 
 // @desc    Record payment
 // @route   POST /api/payments
@@ -34,6 +35,16 @@ exports.createPayment = async (req, res, next) => {
         invoice.paidAmount += amount;
         invoice.balanceDue = invoice.totalAmount - invoice.paidAmount;
         invoice.paymentStatus = invoice.balanceDue <= 0 ? 'paid' : 'partial';
+
+        // Mark as generated since payment is recorded
+        invoice.isGenerated = true;
+
+        // For cycle customers: ensure it's in the Invoice Approval queue
+        const customer = await Customer.findById(invoice.customer);
+        if (customer && customer.notificationFrequency && customer.notificationFrequency !== 'none') {
+            invoice.isApproved = false; // Send/keep in approval queue
+        }
+
         await invoice.save();
 
         // If fully paid and corporate check: allow marking as delivered

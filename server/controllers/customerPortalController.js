@@ -75,7 +75,7 @@ exports.getMyOrder = async (req, res, next) => {
 exports.getMyInvoices = async (req, res, next) => {
     try {
         const { paymentStatus, page = 1, limit = 20 } = req.query;
-        const filter = { customer: req.customer._id };
+        const filter = { customer: req.customer._id, isApproved: true };
         if (paymentStatus) filter.paymentStatus = paymentStatus;
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -131,6 +131,7 @@ exports.getMyInvoice = async (req, res, next) => {
         const invoice = await Invoice.findOne({
             _id: req.params.id,
             customer: req.customer._id,
+            isApproved: true,
         }).populate({
             path: 'order',
             select: 'orderId status items totalAmount deliveryDate',
@@ -184,13 +185,13 @@ exports.getSummary = async (req, res, next) => {
                 status: { $nin: ['delivered', 'cancelled'] },
             }),
             Order.countDocuments({ customer: customerId, status: 'delivered' }),
-            Invoice.countDocuments({ customer: customerId }),
+            Invoice.countDocuments({ customer: customerId, isApproved: true }),
             Notification.countDocuments({ recipient: customerId, recipientModel: 'Customer', isRead: false }),
         ]);
 
         // Unpaid balance
         const unpaidAgg = await Invoice.aggregate([
-            { $match: { customer: customerId, paymentStatus: { $ne: 'paid' } } },
+            { $match: { customer: customerId, isApproved: true, paymentStatus: { $ne: 'paid' } } },
             { $group: { _id: null, total: { $sum: '$balanceDue' } } },
         ]);
 
@@ -341,12 +342,15 @@ exports.createMyOrder = async (req, res, next) => {
         });
 
         // Auto-create invoice
+        const isCycleCustomer = req.customer.notificationFrequency && req.customer.notificationFrequency !== 'none';
         await Invoice.create({
             order: order._id,
             customer: req.customer._id,
             subtotal,
             taxAmount,
             totalAmount,
+            isApproved: !isCycleCustomer,
+            isGenerated: !isCycleCustomer,
         });
 
         // Notify admins
@@ -522,7 +526,7 @@ exports.getFilteredInvoices = async (req, res, next) => {
                 break;
         }
         
-        const filter = { customer: customer._id };
+        const filter = { customer: customer._id, isApproved: true };
         if (startDate) {
             filter.createdAt = {
                 $gte: startDate,

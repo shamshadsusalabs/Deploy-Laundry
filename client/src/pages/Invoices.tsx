@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useSettings } from '../context/SettingsContext';
+import { useAuth } from '../context/AuthContext';
 import Pagination from '../components/Pagination';
 import * as XLSX from 'xlsx';
 import {
@@ -17,6 +18,8 @@ import {
     HiOutlineChevronDown,
     HiOutlineUpload,
     HiOutlineTrash,
+    HiOutlinePencil,
+    HiOutlinePlus,
 } from 'react-icons/hi';
 
 type DatePreset = '' | '7d' | '15d' | '1m';
@@ -32,12 +35,116 @@ const toDateInputValue = (date: Date) => {
 const Invoices = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const activeTab = searchParams.get('tab') || 'standard';
+    const { user } = useAuth();
 
     const [invoices, setInvoices] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { currency } = useSettings();
     const [viewInvoice, setViewInvoice] = useState<any>(null);
     const [batchAction, setBatchAction] = useState<BatchAction>('');
+
+    // ── Edit Mode States ──
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [editItems, setEditItems] = useState<any[]>([]);
+    const [editDiscountPercent, setEditDiscountPercent] = useState(0);
+    const [editTaxPercent, setEditTaxPercent] = useState(0);
+    const [editServiceCharge, setEditServiceCharge] = useState(0);
+    const [editSaving, setEditSaving] = useState(false);
+
+    // ── Edit Mode Calculated Totals ──
+    const editCalc = useMemo(() => {
+        if (!isEditMode) return { subtotal: 0, taxAmount: 0, discountAmount: 0, totalAmount: 0, balanceDue: 0 };
+        const billable = editItems.filter(item => item.serviceType !== 'manual');
+        const subtotal = billable.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0), 0);
+        const taxAmount = (subtotal * (Number(editTaxPercent) || 0)) / 100;
+        const discountAmount = (subtotal * (Number(editDiscountPercent) || 0)) / 100;
+        const totalAmount = subtotal + taxAmount - discountAmount + (Number(editServiceCharge) || 0);
+        const paidAmount = viewInvoice?.paidAmount || 0;
+        const balanceDue = totalAmount - paidAmount;
+        return { subtotal, taxAmount, discountAmount, totalAmount, balanceDue };
+    }, [isEditMode, editItems, editDiscountPercent, editTaxPercent, editServiceCharge, viewInvoice?.paidAmount]);
+
+    const enterEditMode = () => {
+        if (!viewInvoice) return;
+        const orderItems = viewInvoice.order?.items || [];
+        setEditItems(orderItems.map((item: any) => ({ ...item })));
+        setEditDiscountPercent(viewInvoice.order?.discountPercent || 0);
+        setEditTaxPercent(viewInvoice.order?.taxPercent || 0);
+        setEditServiceCharge(viewInvoice.order?.serviceCharge || 0);
+        setIsEditMode(true);
+    };
+
+    const exitEditMode = () => {
+        setIsEditMode(false);
+        setEditItems([]);
+        setEditSaving(false);
+    };
+
+    const handleEditItemChange = (index: number, field: string, value: any) => {
+        setEditItems(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], [field]: value };
+            if (field === 'quantity' || field === 'pricePerUnit') {
+                const qty = Number(field === 'quantity' ? value : updated[index].quantity) || 0;
+                const rate = Number(field === 'pricePerUnit' ? value : updated[index].pricePerUnit) || 0;
+                updated[index].subtotal = qty * rate;
+            }
+            return updated;
+        });
+    };
+
+    const handleRemoveEditItem = (index: number) => {
+        setEditItems(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleAddEditItem = () => {
+        setEditItems(prev => [...prev, {
+            serviceName: '',
+            serviceType: 'service',
+            itemName: '',
+            itemType: 'Clothing',
+            quantity: 1,
+            unit: 'piece',
+            pricePerUnit: 0,
+            subtotal: 0,
+            service: 'custom', // set a dummy or non-null value so it matches billable filters
+        }]);
+    };
+
+    const handleSaveInvoice = async () => {
+        if (!viewInvoice || editItems.length === 0) {
+            toast.error('At least one item is required');
+            return;
+        }
+        // Validate
+        for (const item of editItems) {
+            if (!Number(item.quantity) || Number(item.quantity) <= 0) {
+                toast.error(`Item "${item.itemName || item.serviceName || 'Unnamed'}" must have quantity > 0`);
+                return;
+            }
+            if (Number(item.pricePerUnit) < 0) {
+                toast.error(`Item "${item.itemName || item.serviceName || 'Unnamed'}" has invalid price`);
+                return;
+            }
+        }
+        try {
+            setEditSaving(true);
+            const res = await api.put(`/invoices/${viewInvoice._id}`, {
+                items: editItems,
+                discountPercent: Number(editDiscountPercent) || 0,
+                taxPercent: Number(editTaxPercent) || 0,
+                serviceCharge: Number(editServiceCharge) || 0,
+            });
+            toast.success('Invoice updated successfully');
+            setViewInvoice(res.data.data);
+            exitEditMode();
+            fetchInvoices();
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || 'Failed to update invoice');
+        } finally {
+            setEditSaving(false);
+        }
+    };
 
     // Pagination state
     const [currentPage, setCurrentPage] = useState(1);
@@ -2100,24 +2207,60 @@ const Invoices = () => {
                                 <img src="/logo.jpeg" alt="Logo" className="h-8 w-auto object-contain rounded opacity-90" />
                                 <div>
                                     <p className="text-white font-bold text-sm leading-tight">Peninsula Laundries</p>
-                                    <p className="text-blue-300 text-xs font-mono">{viewInvoice.invoiceId}</p>
+                                    <p className="text-blue-300 text-xs font-mono">
+                                        {viewInvoice.invoiceId}
+                                        {isEditMode && <span className="ml-2 text-amber-300 font-semibold">• Editing</span>}
+                                    </p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
+                                {isEditMode ? (
+                                    <>
+                                        <button
+                                            onClick={handleSaveInvoice}
+                                            disabled={editSaving || editItems.length === 0}
+                                            className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs rounded-lg transition-all font-bold shadow-lg"
+                                        >
+                                            {editSaving ? (
+                                                <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving...</>
+                                            ) : (
+                                                <>💾 Save Changes</>
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={exitEditMode}
+                                            disabled={editSaving}
+                                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white/10 hover:bg-red-500/60 text-white text-xs rounded-lg transition-all font-medium"
+                                        >
+                                            <HiOutlineX className="w-3.5 h-3.5" /> Cancel
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button
+                                            onClick={enterEditMode}
+                                            disabled={viewInvoice.isFinalized && user?.role !== 'admin'}
+                                            title={viewInvoice.isFinalized && user?.role !== 'admin' ? "This invoice is finalized. Only Admin can edit." : "Edit Invoice"}
+                                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500/90 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs rounded-lg transition-all font-bold shadow"
+                                        >
+                                            <HiOutlinePencil className="w-3.5 h-3.5" /> Edit
+                                        </button>
+                                        <button
+                                            onClick={() => downloadPDF(viewInvoice)}
+                                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg transition-all font-medium"
+                                        >
+                                            <HiOutlineDownload className="w-3.5 h-3.5" /> PDF
+                                        </button>
+                                        <button
+                                            onClick={() => printInvoice(viewInvoice, 'thermal')}
+                                            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg transition-all font-medium"
+                                        >
+                                            <HiOutlinePrinter className="w-3.5 h-3.5" /> Thermal
+                                        </button>
+                                    </>
+                                )}
                                 <button
-                                    onClick={() => downloadPDF(viewInvoice)}
-                                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg transition-all font-medium"
-                                >
-                                    <HiOutlineDownload className="w-3.5 h-3.5" /> PDF
-                                </button>
-                                <button
-                                    onClick={() => printInvoice(viewInvoice, 'thermal')}
-                                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-lg transition-all font-medium"
-                                >
-                                    <HiOutlinePrinter className="w-3.5 h-3.5" /> Thermal
-                                </button>
-                                <button
-                                    onClick={() => setViewInvoice(null)}
+                                    onClick={() => { exitEditMode(); setViewInvoice(null); }}
                                     className="p-1.5 rounded-lg bg-white/10 hover:bg-red-500/60 text-white transition-all"
                                     title="Close"
                                 >
@@ -2234,116 +2377,257 @@ const Invoices = () => {
 
                             {/* Unified Invoice Table with 3 Sections */}
                             <div className="rounded-lg overflow-hidden border border-slate-200">
-                                {(() => {
-                                    const allItems = [...(viewInvoice.order?.items || [])];
-                                    const services = allItems.filter(item => !item.isRefunded && item.serviceType !== 'manual' && item.service);
-                                    const manualItems = allItems.filter(item => !item.isRefunded && (item.serviceType === 'manual' || !item.service));
-                                    const refundedItems = allItems.filter(item => item.isRefunded);
-                                    
-                                    const formatDate = (dateStr: string) => {
-                                        if (!dateStr) return '—';
-                                        return new Date(dateStr).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
-                                    };
-                                    
-                                    const deliveryDate = viewInvoice.order?.deliveryDate;
-                                    const formattedDate = formatDate(deliveryDate);
-                                    
-                                    return (
+                                {isEditMode ? (
+                                    /* ── EDIT MODE TABLE ── */
+                                    <>
                                         <table className="w-full text-xs">
-                                            {/* Table Header */}
                                             <thead>
                                                 <tr className="bg-[#1c2a5e] text-white">
-                                                    <th className="text-left py-2 px-3 font-semibold">Delivery Date</th>
+                                                    <th className="text-left py-2 px-3 font-semibold w-8">#</th>
                                                     <th className="text-left py-2 px-3 font-semibold">Item Name</th>
-                                                    <th className="text-center py-2 px-3 font-semibold">Qty</th>
-                                                    <th className="text-right py-2 px-3 font-semibold">Rate</th>
-                                                    <th className="text-right py-2 px-3 font-semibold">Total</th>
+                                                    <th className="text-left py-2 px-3 font-semibold w-24">Type</th>
+                                                    <th className="text-center py-2 px-3 font-semibold w-20">Qty</th>
+                                                    <th className="text-right py-2 px-3 font-semibold w-32">Rate</th>
+                                                    <th className="text-right py-2 px-3 font-semibold w-28">Total</th>
+                                                    <th className="text-center py-2 px-3 font-semibold w-10"></th>
                                                 </tr>
                                             </thead>
-                                            
                                             <tbody>
-                                                {/* SECTION 1: SERVICES - BILLABLE */}
-                                                {services.length > 0 && (
-                                                    <>
-                                                        <tr className="bg-slate-100">
-                                                            <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
-                                                                🔧 Services - Billable
+                                                {editItems.map((item, index) => {
+                                                    const isManual = item.serviceType === 'manual';
+                                                    const rowSubtotal = (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0);
+                                                    return (
+                                                        <tr key={index} className={`border-b border-slate-200 ${item.isRefunded ? 'bg-red-50/50' : 'hover:bg-amber-50/30'} transition-colors`}>
+                                                            <td className="py-2 px-3 text-slate-400 font-mono text-center">{index + 1}</td>
+                                                            <td className="py-1.5 px-2">
+                                                                <input
+                                                                    type="text"
+                                                                    value={item.itemName || item.serviceName || ''}
+                                                                    onChange={(e) => {
+                                                                        handleEditItemChange(index, 'itemName', e.target.value);
+                                                                        handleEditItemChange(index, 'serviceName', e.target.value);
+                                                                    }}
+                                                                    className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none text-slate-800 font-medium"
+                                                                    placeholder="Item name…"
+                                                                />
+                                                            </td>
+                                                            <td className="py-1.5 px-2">
+                                                                <select
+                                                                    value={item.serviceType || 'service'}
+                                                                    onChange={(e) => handleEditItemChange(index, 'serviceType', e.target.value)}
+                                                                    className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none text-slate-800 font-medium"
+                                                                >
+                                                                    <option value="service">Billable</option>
+                                                                    <option value="manual">Tracking Only</option>
+                                                                </select>
+                                                            </td>
+                                                            <td className="py-1.5 px-2">
+                                                                <input
+                                                                    type="number"
+                                                                    min="1"
+                                                                    value={item.quantity}
+                                                                    onChange={(e) => handleEditItemChange(index, 'quantity', e.target.value)}
+                                                                    className="w-full px-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none text-center font-semibold text-slate-800"
+                                                                />
+                                                            </td>
+                                                            <td className="py-1.5 px-2">
+                                                                <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-amber-400 focus-within:border-transparent transition-all">
+                                                                    <span className="bg-slate-50 border-r border-slate-200 px-2 py-1.5 text-[10px] font-bold text-slate-400 select-none">
+                                                                        {currency}
+                                                                    </span>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        step="0.01"
+                                                                        value={item.pricePerUnit}
+                                                                        onChange={(e) => handleEditItemChange(index, 'pricePerUnit', e.target.value)}
+                                                                        className="w-full px-2 py-1.5 outline-none text-right font-semibold text-slate-800 text-xs border-none"
+                                                                    />
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-right py-2 px-3 font-bold text-slate-800">
+                                                                {isManual ? (
+                                                                    <span className="text-slate-400 text-[10px]">Not Billed</span>
+                                                                ) : (
+                                                                    <>{currency}{rowSubtotal.toFixed(2)}</>
+                                                                )}
+                                                            </td>
+                                                            <td className="py-2 px-2 text-center">
+                                                                <button
+                                                                    onClick={() => handleRemoveEditItem(index)}
+                                                                    className="p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                                                                    title="Remove item"
+                                                                >
+                                                                    <HiOutlineTrash className="w-3.5 h-3.5" />
+                                                                </button>
                                                             </td>
                                                         </tr>
-                                                        {services.map((item, i) => (
-                                                            <tr key={`service-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
-                                                                <td className="py-2 px-3 text-slate-700">
-                                                                    {i === 0 ? formattedDate : '—'}
-                                                                </td>
-                                                                <td className="py-2 px-3 text-slate-900 font-medium">{item.serviceName || item.itemName}</td>
-                                                                <td className="text-center py-2 px-3 text-slate-900">{item.quantity}</td>
-                                                                <td className="text-right py-2 px-3 text-slate-900">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
-                                                                <td className="text-right py-2 px-3 text-slate-900 font-semibold">{currency}{Number(item.subtotal || 0).toFixed(2)}</td>
-                                                            </tr>
-                                                        ))}
-                                                    </>
-                                                )}
-                                                
-                                                {/* SECTION 2: ITEMS - TRACKING ONLY (NOT BILLED) */}
-                                                {manualItems.length > 0 && (
-                                                    <>
-                                                        <tr className="bg-slate-100">
-                                                            <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
-                                                                📦 Items - Tracking Only (Not Billed)
-                                                            </td>
-                                                        </tr>
-                                                        {manualItems.map((item, i) => (
-                                                            <tr key={`manual-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
-                                                                <td className="py-2 px-3 text-slate-700">
-                                                                    {i === 0 ? formattedDate : '—'}
-                                                                </td>
-                                                                <td className="py-2 px-3 text-slate-900 font-medium">{item.itemName || item.serviceName}</td>
-                                                                <td className="text-center py-2 px-3 text-slate-900">{item.quantity}</td>
-                                                                <td className="text-right py-2 px-3 text-slate-500 line-through">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
-                                                                <td className="text-right py-2 px-3 text-slate-500 font-semibold">Not Billed</td>
-                                                            </tr>
-                                                        ))}
-                                                        <tr className="bg-slate-50 border-b border-slate-200">
-                                                            <td colSpan={5} className="py-2 px-3 text-center text-xs text-slate-600">
-                                                                ℹ️ These items are tracked for damage reference only and NOT included in billing
-                                                            </td>
-                                                        </tr>
-                                                    </>
-                                                )}
-                                                
-                                                {/* SECTION 3: REFUNDED ITEMS */}
-                                                {refundedItems.length > 0 && (
-                                                    <>
-                                                        <tr className="bg-slate-100">
-                                                            <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
-                                                                🔄 Refunded Items
-                                                            </td>
-                                                        </tr>
-                                                        {refundedItems.map((item, i) => (
-                                                            <tr key={`refund-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
-                                                                <td className="py-2 px-3 text-slate-700">
-                                                                    {i === 0 ? formattedDate : '—'}
-                                                                </td>
-                                                                <td className="py-2 px-3">
-                                                                    <div className="text-slate-900 font-medium">{item.serviceName || item.itemName}</div>
-                                                                    {item.refundReason && (
-                                                                        <div className="text-red-600 text-xs mt-0.5">Reason: {item.refundReason}</div>
-                                                                    )}
-                                                                </td>
-                                                                <td className="text-center py-2 px-3 text-slate-900">{item.damagedQuantity || item.quantity}</td>
-                                                                <td className="text-right py-2 px-3 text-slate-900">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
-                                                                <td className="text-right py-2 px-3 text-red-700 font-semibold">-{currency}{Number(item.refundAmount || item.subtotal || 0).toFixed(2)}</td>
-                                                            </tr>
-                                                        ))}
-                                                    </>
-                                                )}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
-                                    );
-                                })()}
+                                        {/* Add Item Button */}
+                                        <div className="px-3 py-2.5 bg-slate-50 border-t border-slate-200">
+                                            <button
+                                                onClick={handleAddEditItem}
+                                                className="flex items-center gap-1.5 text-xs font-semibold text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 px-3 py-1.5 rounded-lg transition-all"
+                                            >
+                                                <HiOutlinePlus className="w-3.5 h-3.5" /> Add New Item
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    /* ── READ-ONLY TABLE (original) ── */
+                                    (() => {
+                                        const allItems = [...(viewInvoice.order?.items || [])];
+                                        const services = allItems.filter(item => !item.isRefunded && item.serviceType !== 'manual' && item.service);
+                                        const manualItems = allItems.filter(item => !item.isRefunded && (item.serviceType === 'manual' || !item.service));
+                                        const refundedItems = allItems.filter(item => item.isRefunded);
+                                        
+                                        const formatDate = (dateStr: string) => {
+                                            if (!dateStr) return '—';
+                                            return new Date(dateStr).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+                                        };
+                                        
+                                        const deliveryDate = viewInvoice.order?.deliveryDate;
+                                        const formattedDate = formatDate(deliveryDate);
+                                        
+                                        return (
+                                            <table className="w-full text-xs">
+                                                {/* Table Header */}
+                                                <thead>
+                                                    <tr className="bg-[#1c2a5e] text-white">
+                                                        <th className="text-left py-2 px-3 font-semibold">Delivery Date</th>
+                                                        <th className="text-left py-2 px-3 font-semibold">Item Name</th>
+                                                        <th className="text-center py-2 px-3 font-semibold">Qty</th>
+                                                        <th className="text-right py-2 px-3 font-semibold">Rate</th>
+                                                        <th className="text-right py-2 px-3 font-semibold">Total</th>
+                                                    </tr>
+                                                </thead>
+                                                
+                                                <tbody>
+                                                    {/* SECTION 1: SERVICES - BILLABLE */}
+                                                    {services.length > 0 && (
+                                                        <>
+                                                            <tr className="bg-slate-100">
+                                                                <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
+                                                                    🔧 Services - Billable
+                                                                </td>
+                                                            </tr>
+                                                            {services.map((item, i) => (
+                                                                <tr key={`service-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
+                                                                    <td className="py-2 px-3 text-slate-700">
+                                                                        {i === 0 ? formattedDate : '—'}
+                                                                    </td>
+                                                                    <td className="py-2 px-3 text-slate-900 font-medium">{item.serviceName || item.itemName}</td>
+                                                                    <td className="text-center py-2 px-3 text-slate-900">{item.quantity}</td>
+                                                                    <td className="text-right py-2 px-3 text-slate-900">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                                                    <td className="text-right py-2 px-3 text-slate-900 font-semibold">{currency}{Number(item.subtotal || 0).toFixed(2)}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </>
+                                                    )}
+                                                    
+                                                    {/* SECTION 2: ITEMS - TRACKING ONLY (NOT BILLED) */}
+                                                    {manualItems.length > 0 && (
+                                                        <>
+                                                            <tr className="bg-slate-100">
+                                                                <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
+                                                                    📦 Items - Tracking Only (Not Billed)
+                                                                </td>
+                                                            </tr>
+                                                            {manualItems.map((item, i) => (
+                                                                <tr key={`manual-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
+                                                                    <td className="py-2 px-3 text-slate-700">
+                                                                        {i === 0 ? formattedDate : '—'}
+                                                                    </td>
+                                                                    <td className="py-2 px-3 text-slate-900 font-medium">{item.itemName || item.serviceName}</td>
+                                                                    <td className="text-center py-2 px-3 text-slate-900">{item.quantity}</td>
+                                                                    <td className="text-right py-2 px-3 text-slate-500 line-through">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                                                    <td className="text-right py-2 px-3 text-slate-500 font-semibold">Not Billed</td>
+                                                                </tr>
+                                                            ))}
+                                                            <tr className="bg-slate-50 border-b border-slate-200">
+                                                                <td colSpan={5} className="py-2 px-3 text-center text-xs text-slate-600">
+                                                                    ℹ️ These items are tracked for damage reference only and NOT included in billing
+                                                                </td>
+                                                            </tr>
+                                                        </>
+                                                    )}
+                                                    
+                                                    {/* SECTION 3: REFUNDED ITEMS */}
+                                                    {refundedItems.length > 0 && (
+                                                        <>
+                                                            <tr className="bg-slate-100">
+                                                                <td colSpan={5} className="py-2 px-3 font-bold text-xs uppercase tracking-wide text-slate-700">
+                                                                    🔄 Refunded Items
+                                                                </td>
+                                                            </tr>
+                                                            {refundedItems.map((item, i) => (
+                                                                <tr key={`refund-${i}`} className="border-b border-slate-200 hover:bg-slate-50">
+                                                                    <td className="py-2 px-3 text-slate-700">
+                                                                        {i === 0 ? formattedDate : '—'}
+                                                                    </td>
+                                                                    <td className="py-2 px-3">
+                                                                        <div className="text-slate-900 font-medium">{item.serviceName || item.itemName}</div>
+                                                                        {item.refundReason && (
+                                                                            <div className="text-red-600 text-xs mt-0.5">Reason: {item.refundReason}</div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="text-center py-2 px-3 text-slate-900">{item.damagedQuantity || item.quantity}</td>
+                                                                    <td className="text-right py-2 px-3 text-slate-900">{currency}{Number(item.pricePerUnit || 0).toFixed(2)}</td>
+                                                                    <td className="text-right py-2 px-3 text-red-700 font-semibold">-{currency}{Number(item.refundAmount || item.subtotal || 0).toFixed(2)}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        );
+                                    })()
+                                )}
                             </div>
 
-                            {/* Credited Items */}
+                            {/* ── EDIT MODE: Discount / Tax / Service Charge Controls ── */}
+                            {isEditMode && (
+                                <div className="grid grid-cols-3 gap-3 p-4 bg-amber-50/50 border border-amber-200 rounded-xl">
+                                    <div>
+                                        <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1 block">Discount %</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.1"
+                                            value={editDiscountPercent}
+                                            onChange={(e) => setEditDiscountPercent(Number(e.target.value) || 0)}
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none text-slate-800 font-semibold"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1 block">Tax %</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            step="0.1"
+                                            value={editTaxPercent}
+                                            onChange={(e) => setEditTaxPercent(Number(e.target.value) || 0)}
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none text-slate-800 font-semibold"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1 block">Service Charge ({currency})</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={editServiceCharge}
+                                            onChange={(e) => setEditServiceCharge(Number(e.target.value) || 0)}
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent outline-none text-slate-800 font-semibold"
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             {viewInvoice.creditedItems?.length > 0 && (
                                 <div className="rounded-xl overflow-hidden border border-red-100">
                                     <div className="bg-red-50 border-b border-red-100 px-3 py-2 text-xs font-bold text-red-700 uppercase tracking-wide">
@@ -2374,30 +2658,46 @@ const Invoices = () => {
                                     <div className="space-y-1.5 text-xs">
                                         <div className="flex justify-between gap-12 text-slate-600">
                                             <span>Sub Total</span>
-                                            <span className="font-medium text-slate-800">{currency}{Number(viewInvoice.subtotal || 0).toFixed(2)}</span>
+                                            <span className="font-medium text-slate-800">
+                                                {currency}{Number(isEditMode ? editCalc.subtotal : viewInvoice.subtotal || 0).toFixed(2)}
+                                            </span>
                                         </div>
                                         <div className="flex justify-between gap-12 text-slate-600">
                                             <span>Sales Tax</span>
-                                            <span className="font-medium text-slate-800">{currency}{Number(viewInvoice.taxAmount || 0).toFixed(2)}</span>
+                                            <span className="font-medium text-slate-800">
+                                                {currency}{Number(isEditMode ? editCalc.taxAmount : viewInvoice.taxAmount || 0).toFixed(2)}
+                                            </span>
                                         </div>
-                                        {(viewInvoice.discountAmount || 0) > 0 && (
+                                        {((isEditMode ? editCalc.discountAmount : viewInvoice.discountAmount) || 0) > 0 && (
                                             <div className="flex justify-between gap-12 text-emerald-600">
                                                 <span>Discount</span>
-                                                <span className="font-medium">-{currency}{Number(viewInvoice.discountAmount).toFixed(2)}</span>
+                                                <span className="font-medium">
+                                                    -{currency}{Number(isEditMode ? editCalc.discountAmount : viewInvoice.discountAmount).toFixed(2)}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {((isEditMode ? editServiceCharge : viewInvoice.serviceCharge) || 0) > 0 && (
+                                            <div className="flex justify-between gap-12 text-slate-600">
+                                                <span>Service Charge</span>
+                                                <span className="font-medium text-slate-800">
+                                                    {currency}{Number(isEditMode ? editServiceCharge : viewInvoice.serviceCharge).toFixed(2)}
+                                                </span>
                                             </div>
                                         )}
                                         <div className="flex justify-between gap-12 bg-[#1c2a5e] text-white font-black text-sm px-4 py-2 rounded-lg mt-2">
                                             <span>TOTAL</span>
-                                            <span>{currency}{Number(viewInvoice.totalAmount || 0).toFixed(2)}</span>
+                                            <span>
+                                                {currency}{Number(isEditMode ? editCalc.totalAmount : viewInvoice.totalAmount || 0).toFixed(2)}
+                                            </span>
                                         </div>
                                         <div className="flex justify-between gap-12 text-slate-500 text-[11px] px-1">
                                             <span>Paid</span>
                                             <span className="text-emerald-600 font-semibold">{currency}{Number(viewInvoice.paidAmount || 0).toFixed(2)}</span>
                                         </div>
                                         <div className="flex justify-between gap-12 text-slate-500 text-[11px] px-1">
-                                            <span>{(viewInvoice.balanceDue || 0) < 0 ? 'Refund Due to Customer' : 'Balance Due'}</span>
-                                            <span className={`font-bold ${(viewInvoice.balanceDue || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                {(viewInvoice.balanceDue || 0) < 0 ? '-' : ''}{currency}{Math.abs(Number(viewInvoice.balanceDue || 0)).toFixed(2)}
+                                            <span>{(isEditMode ? editCalc.balanceDue : viewInvoice.balanceDue || 0) < 0 ? 'Refund Due to Customer' : 'Balance Due'}</span>
+                                            <span className={`font-bold ${(isEditMode ? editCalc.balanceDue : viewInvoice.balanceDue || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                {(isEditMode ? editCalc.balanceDue : viewInvoice.balanceDue || 0) < 0 ? '-' : ''}{currency}{Math.abs(Number(isEditMode ? editCalc.balanceDue : viewInvoice.balanceDue || 0)).toFixed(2)}
                                             </span>
                                         </div>
                                     </div>

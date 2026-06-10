@@ -35,10 +35,11 @@ const sendInvoiceReminders = async () => {
                 continue;
             }
 
-            // Find unpaid/partially paid invoices for this customer
+            // Find unpaid/partially paid invoices for this customer that are approved
             const unpaidInvoices = await Invoice.find({
                 customer: customer._id,
-                paymentStatus: { $in: ['unpaid', 'partial'] }
+                paymentStatus: { $in: ['unpaid', 'partial'] },
+                isApproved: true
             });
 
             if (unpaidInvoices.length === 0) {

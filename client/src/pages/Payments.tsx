@@ -441,12 +441,14 @@ const PaymentModal = ({
     onSubmit: (e: React.FormEvent) => void;
     onClose: () => void;
 }) => {
-    const [dateChip, setDateChip] = useState('today');
+    const [dateChip, setDateChip] = useState('all');
     const [customDate, setCustomDate] = useState('');
     const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'unpaid', 'partial'
 
     const filteredInvoices = useMemo(() => {
-        let list = invoices;
+        // Filter out invoices with zero or negative balance due
+        let list = invoices.filter(inv => (inv.balanceDue || 0) > 0);
 
         // Date filter
         const now = new Date();
@@ -464,8 +466,13 @@ const PaymentModal = ({
             const start = new Date(customDate); start.setHours(0, 0, 0, 0);
             const end = new Date(customDate); end.setHours(23, 59, 59, 999);
             list = list.filter(inv => new Date(inv.createdAt) >= start && new Date(inv.createdAt) <= end);
-        } else if (dateChip === 'all') {
-            // no date filter
+        }
+
+        // Status filter
+        if (statusFilter === 'unpaid') {
+            list = list.filter(inv => inv.paymentStatus === 'unpaid');
+        } else if (statusFilter === 'partial') {
+            list = list.filter(inv => inv.paymentStatus === 'partial');
         }
 
         // Search filter
@@ -478,7 +485,7 @@ const PaymentModal = ({
             );
         }
         return list;
-    }, [invoices, dateChip, customDate, search]);
+    }, [invoices, dateChip, customDate, search, statusFilter]);
 
     const selectedInv = invoices.find(i => i._id === form.invoice);
 
@@ -506,23 +513,23 @@ const PaymentModal = ({
                         {/* LEFT COLUMN — Invoice Picker */}
                         <div className="lg:w-[55%] flex flex-col border-b lg:border-b-0 lg:border-r border-slate-100 overflow-hidden">
                             <div className="px-5 pt-5 pb-3 flex-shrink-0">
-                                <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center justify-between mb-2.5">
                                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
                                         Select Invoice
                                     </label>
-                                    <span className="text-[10px] text-slate-400">{filteredInvoices.length} invoices</span>
+                                    <span className="text-[10px] text-slate-400 font-semibold">{filteredInvoices.length} invoices pending</span>
                                 </div>
 
                                 {/* Date Chip Filters */}
-                                <div className="flex flex-wrap gap-1.5 mb-3">
+                                <div className="flex flex-wrap gap-1.5 mb-2.5">
                                     {DATE_CHIPS.map(chip => (
                                         <button
                                             key={chip.key}
                                             type="button"
                                             onClick={() => setDateChip(chip.key)}
-                                            className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
                                                 dateChip === chip.key
-                                                    ? 'bg-[#1c2a5e] text-white'
+                                                    ? 'bg-[#1c2a5e] text-white shadow-sm shadow-[#1c2a5e]/20'
                                                     : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                                             }`}
                                         >
@@ -532,14 +539,36 @@ const PaymentModal = ({
                                     <button
                                         type="button"
                                         onClick={() => setDateChip('all')}
-                                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
                                             dateChip === 'all'
-                                                ? 'bg-[#1c2a5e] text-white'
+                                                ? 'bg-[#1c2a5e] text-white shadow-sm'
                                                 : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                                         }`}
                                     >
                                         All
                                     </button>
+                                </div>
+
+                                {/* Status Segment Control */}
+                                <div className="flex gap-1 mb-3 bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
+                                    {[
+                                        { label: 'All Pending', key: 'all' },
+                                        { label: 'Unpaid Only', key: 'unpaid' },
+                                        { label: 'Partial Only', key: 'partial' },
+                                    ].map(tab => (
+                                        <button
+                                            key={tab.key}
+                                            type="button"
+                                            onClick={() => setStatusFilter(tab.key)}
+                                            className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                                statusFilter === tab.key
+                                                    ? 'bg-white text-slate-800 shadow-sm border border-slate-200/20'
+                                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/30'
+                                            }`}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    ))}
                                 </div>
 
                                 {/* Custom date input */}
@@ -566,15 +595,15 @@ const PaymentModal = ({
                             </div>
 
                             {/* Invoice List */}
-                            <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-2">
+                            <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-2.5">
                                 {filteredInvoices.length === 0 ? (
-                                    <div className="text-center py-8 text-slate-400">
-                                        <HiOutlineDocumentText className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                                        <p className="text-xs">No invoices found</p>
-                                        <button type="button" onClick={() => { setDateChip('all'); setSearch(''); }}
-                                            className="text-xs text-[#1c2a5e] mt-1 underline underline-offset-2">Show all</button>
+                                    <div className="text-center py-10 text-slate-400 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 mx-1">
+                                        <HiOutlineDocumentText className="w-8 h-8 mx-auto mb-2 opacity-30 text-slate-400" />
+                                        <p className="text-xs font-semibold">No pending invoices found</p>
+                                        <button type="button" onClick={() => { setDateChip('all'); setStatusFilter('all'); setSearch(''); }}
+                                            className="text-xs text-cyan-600 hover:text-cyan-700 font-bold mt-1.5 underline underline-offset-2 cursor-pointer">Clear filters</button>
                                     </div>
-                                ) : (
+                               ) : (
                                     filteredInvoices.map((inv) => {
                                         const isSelected = form.invoice === inv._id;
                                         return (
@@ -582,38 +611,56 @@ const PaymentModal = ({
                                                 key={inv._id}
                                                 type="button"
                                                 onClick={() => setForm({ ...form, invoice: inv._id, amount: String(inv.balanceDue || '') })}
-                                                className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
+                                                className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all duration-200 cursor-pointer ${
                                                     isSelected
-                                                        ? 'border-[#1c2a5e] bg-[#1c2a5e]/5'
-                                                        : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'
+                                                        ? 'border-[#1c2a5e] bg-indigo-50/40 shadow-sm ring-1 ring-[#1c2a5e]/30 scale-[1.01]'
+                                                        : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm hover:bg-slate-50/50'
                                                 }`}
                                             >
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-2">
-                                                        {isSelected && (
+                                                        {isSelected ? (
                                                             <span className="w-4 h-4 rounded-full bg-[#1c2a5e] flex items-center justify-center shrink-0">
                                                                 <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                                                             </span>
+                                                        ) : (
+                                                            <span className="w-4 h-4 rounded-full border border-slate-300 bg-slate-50 flex items-center justify-center shrink-0" />
                                                         )}
-                                                        <span className={`text-xs font-bold font-mono ${isSelected ? 'text-[#1c2a5e]' : 'text-slate-600'}`}>
+                                                        <span className={`text-xs font-bold font-mono ${isSelected ? 'text-[#1c2a5e]' : 'text-slate-800'}`}>
                                                             {inv.invoiceId}
                                                         </span>
-                                                        <span className="text-[10px] text-slate-400 font-mono">{inv.order?.orderId}</span>
+                                                        <span className="text-[10px] text-slate-400 font-mono">({inv.order?.orderId})</span>
+
+                                                        {/* Status Badge */}
+                                                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider ${
+                                                            inv.paymentStatus === 'partial' 
+                                                                ? 'bg-amber-50 text-amber-700 border border-amber-200/60' 
+                                                                : 'bg-rose-50 text-rose-700 border border-rose-200/60'
+                                                        }`}>
+                                                            {inv.paymentStatus === 'partial' ? 'Partial' : 'Unpaid'}
+                                                        </span>
                                                     </div>
-                                                    <span className={`text-sm font-black ${isSelected ? 'text-[#1c2a5e]' : 'text-red-500'}`}>
-                                                        {currency}{Number(inv.balanceDue || 0).toFixed(2)}
-                                                    </span>
+                                                    
+                                                    {/* Balance Due Amount */}
+                                                    <div className="text-right">
+                                                        <span className="text-[8px] text-slate-400 font-bold block uppercase tracking-wider leading-none mb-0.5">Due</span>
+                                                        <span className={`text-xs font-black ${isSelected ? 'text-[#1c2a5e]' : 'text-rose-600'}`}>
+                                                            {currency}{Number(inv.balanceDue || 0).toFixed(2)}
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center justify-between mt-1">
+                                                <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100/70">
                                                     <div>
-                                                        <span className="text-xs text-slate-700 font-medium">{inv.customer?.name || '—'}</span>
+                                                        <span className="text-xs text-slate-700 font-semibold">{inv.customer?.name || '—'}</span>
                                                         {inv.customer?.phone && (
                                                             <span className="text-[10px] text-slate-400 ml-1.5">{inv.customer.phone}</span>
                                                         )}
                                                     </div>
-                                                    <span className="text-[10px] text-slate-400">
-                                                        {inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
-                                                    </span>
+                                                    <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                                                        <span className="font-medium">Bill: {currency}{Number(inv.totalAmount || 0).toFixed(2)}</span>
+                                                        <span>•</span>
+                                                        <span>{inv.createdAt ? new Date(inv.createdAt).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}</span>
+                                                    </div>
                                                 </div>
                                             </button>
                                         );

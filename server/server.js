@@ -9,9 +9,6 @@ const errorHandler = require('./middleware/errorHandler');
 // Load env vars
 dotenv.config();
 
-// Connect to database
-connectDB();
-
 const app = express();
 
 const allowedOrigins = [
@@ -72,7 +69,20 @@ app.use(errorHandler);
 const { initCron } = require('./cron/invoiceReminders');
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-    initCron();
-});
+
+// Start server only after DB is connected
+const startServer = async () => {
+    try {
+        await connectDB();
+        
+        app.listen(PORT, () => {
+            console.log(`🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+            initCron();
+        });
+    } catch (error) {
+        console.error('💀 Failed to start server:', error.message);
+        process.exit(1);
+    }
+};
+
+startServer();

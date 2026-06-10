@@ -96,7 +96,7 @@ export default function OrdersScreen({ navigation }: any) {
                             {itemCount} item{itemCount !== 1 ? 's' : ''}
                         </Text>
                     </View>
-                    <Text style={{ color: '#f1f5f9', fontWeight: '800', fontSize: 18 }}>{currency}{item.totalAmount}</Text>
+                    <Text style={{ color: '#f1f5f9', fontWeight: '800', fontSize: 18 }}>{currency}{Number(item.totalAmount || 0).toFixed(2)}</Text>
                 </View>
 
                 {item.deliveryDate && (

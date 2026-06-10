@@ -36,9 +36,15 @@ export interface ICustomer {
 // --- SERVICE ---
 export interface IService {
     _id: string;
+    number?: string;
+    linenGroup?: string;
+    category?: string;
     name: string;
     serviceType: 'wash-fold' | 'dry-cleaning' | 'ironing' | 'express' | 'bulk-commercial';
     description?: string;
+    colors?: string;
+    sizes?: string;
+    weight?: string;
     pricePerUnit: number;
     unit: 'piece' | 'kg' | 'bundle';
     isExpress: boolean;

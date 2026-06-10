@@ -208,7 +208,7 @@ export default function OrderDetailScreen({ route, navigation }: any) {
                                     {item.serviceType?.replace('-', ' ')} • {item.quantity} {item.unit}
                                 </Text>
                             </View>
-                            <Text style={{ color: '#f1f5f9', fontSize: 14, fontWeight: '700' }}>{currency}{item.subtotal}</Text>
+                            <Text style={{ color: '#f1f5f9', fontSize: 14, fontWeight: '700' }}>{currency}{Number(item.subtotal || 0).toFixed(2)}</Text>
                         </View>
                     ))}
                 </View>
@@ -231,24 +231,24 @@ export default function OrderDetailScreen({ route, navigation }: any) {
 
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                         <Text style={{ color: '#64748b', fontSize: 14 }}>Subtotal</Text>
-                        <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{order.subtotal}</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{Number(order.subtotal || 0).toFixed(2)}</Text>
                     </View>
                     {order.taxAmount > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#64748b', fontSize: 14 }}>Tax ({order.taxPercent}%)</Text>
-                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{order.taxAmount}</Text>
+                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{Number(order.taxAmount || 0).toFixed(2)}</Text>
                         </View>
                     )}
                     {order.discountAmount > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#4ade80', fontSize: 14 }}>Discount ({order.discountPercent}%)</Text>
-                            <Text style={{ color: '#4ade80', fontSize: 14 }}>-{currency}{order.discountAmount}</Text>
+                            <Text style={{ color: '#4ade80', fontSize: 14 }}>-{currency}{Number(order.discountAmount || 0).toFixed(2)}</Text>
                         </View>
                     )}
                     {order.serviceCharge > 0 && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}>
                             <Text style={{ color: '#64748b', fontSize: 14 }}>Service Charge</Text>
-                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{order.serviceCharge}</Text>
+                            <Text style={{ color: '#94a3b8', fontSize: 14 }}>{currency}{Number(order.serviceCharge || 0).toFixed(2)}</Text>
                         </View>
                     )}
                     <View
@@ -262,7 +262,7 @@ export default function OrderDetailScreen({ route, navigation }: any) {
                         }}
                     >
                         <Text style={{ color: '#f1f5f9', fontSize: 18, fontWeight: '800' }}>Total</Text>
-                        <Text style={{ color: '#06b6d4', fontSize: 18, fontWeight: '800' }}>{currency}{order.totalAmount}</Text>
+                        <Text style={{ color: '#06b6d4', fontSize: 18, fontWeight: '800' }}>{currency}{Number(order.totalAmount || 0).toFixed(2)}</Text>
                     </View>
 
                     {/* Payment Status */}

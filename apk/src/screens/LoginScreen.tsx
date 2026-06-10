@@ -36,6 +36,17 @@ export default function LoginScreen({ navigation }: any) {
         }
     };
 
+    const handleGuestLogin = async () => {
+        setIsLoading(true);
+        try {
+            await login('0400000000', 'guestpassword');
+        } catch (err: any) {
+            Alert.alert('Login Failed', err.response?.data?.message || 'Could not connect as guest');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     return (
         <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
             <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
@@ -178,6 +189,25 @@ export default function LoginScreen({ navigation }: any) {
                                         {isLoading ? 'Signing in...' : 'Sign In'}
                                     </Text>
                                 </LinearGradient>
+                            </TouchableOpacity>
+
+                            {/* Guest/Demo Button */}
+                            <TouchableOpacity
+                                onPress={handleGuestLogin}
+                                disabled={isLoading}
+                                activeOpacity={0.8}
+                                style={{
+                                    marginTop: 12,
+                                    paddingVertical: 14,
+                                    borderRadius: 16,
+                                    alignItems: 'center',
+                                    borderWidth: 1.5,
+                                    borderColor: '#06b6d4',
+                                }}
+                            >
+                                <Text style={{ color: '#06b6d4', fontWeight: '700', fontSize: 15, letterSpacing: 0.5 }}>
+                                    Explore as Guest / Demo
+                                </Text>
                             </TouchableOpacity>
                         </View>
 

@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { getInvoices, getInvoice } = require('../controllers/invoiceController');
+const { getInvoices, getInvoice, updateInvoice, approveInvoice } = require('../controllers/invoiceController');
 const {
     getMigratedInvoices,
     getMigratedInvoice,
     importMigratedInvoices,
     clearMigratedInvoices
 } = require('../controllers/migratedInvoiceController');
-const { protect } = require('../middleware/auth');
+const { protect, authorize } = require('../middleware/auth');
 
 router.use(protect);
 
@@ -17,6 +17,7 @@ router.route('/migrated/import').post(importMigratedInvoices);
 router.route('/migrated/:id').get(getMigratedInvoice);
 
 router.route('/').get(getInvoices);
-router.route('/:id').get(getInvoice);
+router.route('/:id/approve').put(authorize('admin', 'manager', 'cashier'), approveInvoice);
+router.route('/:id').get(getInvoice).put(updateInvoice);
 
 module.exports = router;

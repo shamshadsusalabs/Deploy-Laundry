@@ -66,7 +66,7 @@ const createEmptyQuickCustomer = (): QuickCustomerForm => ({
 
 const CreateOrder = () => {
     const navigate = useNavigate();
-    const { currency } = useSettings();
+    const { currency, settings } = useSettings();
     const [customers, setCustomers] = useState<ICustomer[]>([]);
     const [services, setServices] = useState<IService[]>([]);
     const [loading, setLoading] = useState(false);
@@ -85,9 +85,19 @@ const CreateOrder = () => {
     }>>([]);
     const [specialInstructions, setSpecialInstructions] = useState('');
     const [deliveryDate, setDeliveryDate] = useState('');
-    const taxPercent = 5;
+    const taxPercent = settings?.taxPercent ?? 5;
     const [discountPercent, setDiscountPercent] = useState(0);
     const [applyCreditBalance, setApplyCreditBalance] = useState(false);
+    const [hasLoadedDefaults, setHasLoadedDefaults] = useState(false);
+
+    useEffect(() => {
+        if (settings && Object.keys(settings).length > 0 && !hasLoadedDefaults) {
+            if (settings.defaultDiscountPercent !== undefined) {
+                setDiscountPercent(settings.defaultDiscountPercent);
+            }
+            setHasLoadedDefaults(true);
+        }
+    }, [settings, hasLoadedDefaults]);
 
     // Quick-add customer modal
     const [showAddCustomer, setShowAddCustomer] = useState(false);

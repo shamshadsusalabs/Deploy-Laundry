@@ -15,6 +15,7 @@ const CreateOrder = lazy(() => import('./pages/CreateOrder'));
 const OrderDetail = lazy(() => import('./pages/OrderDetail'));
 const Invoices = lazy(() => import('./pages/Invoices'));
 const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'));
+const InvoiceApproval = lazy(() => import('./pages/InvoiceApproval'));
 const Payments = lazy(() => import('./pages/Payments'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Reports = lazy(() => import('./pages/Reports'));
@@ -78,6 +79,11 @@ function App() {
                                 <Route path="/customers" element={<Customers />} />
                                 <Route path="/invoices" element={<Invoices />} />
                                 <Route path="/invoices/:invoiceId" element={<InvoiceDetail />} />
+                                <Route path="/invoices/approval" element={
+                                    <ProtectedRoute allowedRoles={['admin', 'manager', 'cashier']}>
+                                        <InvoiceApproval />
+                                    </ProtectedRoute>
+                                } />
                                 <Route path="/payments" element={<Payments />} />
                                 <Route path="/reports" element={
                                     <ProtectedRoute allowedRoles={['admin', 'manager']}>
